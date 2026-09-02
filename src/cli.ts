@@ -50,7 +50,8 @@ function whoAmI(): SessionRecord {
   // Dentro de un Claude aparte la CLI se reconoce por el spochie que atiende: el
   // registro lo escribio el demonio al lanzarlo, y no lleva socket.
   if (process.env.SPOCHIE_APARTE) {
-    const ap = liveSessions().find(s => s.aparte === process.env.SPOCHIE_APARTE);
+    const sid = process.env.SPOCHIE_APARTE_SESION;
+    const ap = liveSessions().find(s => sid ? s.sessionId === sid : s.aparte === process.env.SPOCHIE_APARTE);
     if (ap) return ap;
     throw new Error(`este Claude aparte (spochie ${process.env.SPOCHIE_APARTE}) ya no esta registrado`);
   }
@@ -138,12 +139,22 @@ async function main() {
     // unico que hace falta, asi que ni se intenta.
     const raw = process.stdin.isTTY ? "{}" : await new Response(Bun.stdin.stream()).text().catch(() => "{}");
     const ev = raw.trim() ? JSON.parse(raw) : {};
-    // Un Claude aparte ya lo registro el demonio que lo lanzo.
-    if (process.env.SPOCHIE_APARTE) return;
     const socket = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
     const token = process.env.CLAUDE_CODE_MESSAGING_TOKEN;
     if (!socket || !token) { console.error("spochie: esta sesion no tiene buzon; no registro"); return; }
     const cwd: string = ev.cwd ?? process.cwd();
+    // La ventana de un Claude aparte: sustituye el registro provisional que dejo el
+    // demonio por uno con socket, y el demonio le entrega lo que tenia guardado. No
+    // reclama spochies ni toca launchd. Lo que se imprime entra en su contexto.
+    if (process.env.SPOCHIE_APARTE) {
+      const id = process.env.SPOCHIE_APARTE;
+      register({
+        sessionId: process.env.SPOCHIE_APARTE_SESION ?? `aparte-${id}`, name: `aparte-${id}`, cwd, socket, token,
+        pid: Number(socket.split("/").pop()!.replace(/\.sock$/, "")) || process.ppid, startedAt: Date.now(), aparte: id,
+      });
+      console.log(`spochie: esta ventana es el Claude aparte del spochie ${id}. El primer turno llega ahora por el tunel.`);
+      return;
+    }
     const sessionId: string = ev.session_id ?? socket;
     register({
       sessionId,
@@ -169,7 +180,7 @@ async function main() {
     const raw = await new Response(Bun.stdin.stream()).text().catch(() => "{}");
     const ev = raw.trim() ? JSON.parse(raw) : {};
     const sock = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
-    const id = ev.session_id ?? liveSessions().find(s => s.socket === sock)?.sessionId;
+    const id = process.env.SPOCHIE_APARTE_SESION ?? ev.session_id ?? liveSessions().find(s => s.socket === sock)?.sessionId;
     if (!id) return;
     try { await rpc({ op: "session-end", sessionId: id }, 5000); } catch {}
     unregister(id);
@@ -396,11 +407,16 @@ async function main() {
       break;
     }
     case "take":
-      out(await rpc({ op: "take", sessionId: whoAmI().sessionId, id: rest[0], aqui: has(rest, "aqui") }));
+    case "accept": {
+      const r = await rpc({ op: cmd, sessionId: whoAmI().sessionId, id: rest[0], by: Cfg.load().human, aqui: has(rest, "aqui") });
+      out(r);
+      if (r?.ok && r.aparte) {
+        console.log(r.ventana
+          ? `Lo atiende un Claude aparte en una VENTANA NUEVA de la terminal, en ${r.aparte}. A esta sesion no le llega nada mas del spochie: no hagas nada, sigue con lo tuyo.`
+          : `Lo atiende un Claude aparte en segundo plano en ${r.aparte}. A esta sesion no le llega nada mas del spochie. Se ve en Slack y con  spochie show ${rest[0]}.`);
+      }
       break;
-    case "accept":
-      out(await rpc({ op: "accept", sessionId: whoAmI().sessionId, id: rest[0], by: Cfg.load().human, aqui: has(rest, "aqui") }));
-      break;
+    }
     case "say": {
       const me = whoAmI();
       const id = rest[0];

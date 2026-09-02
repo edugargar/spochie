@@ -8,6 +8,7 @@
  */
 import net from "node:net";
 import { existsSync, unlinkSync, writeFileSync, readFileSync, appendFileSync } from "node:fs";
+import { basename } from "node:path";
 import { DAEMON_SOCK, DAEMON_LOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
 import { liveSessions, findSession, unregister, type SessionRecord } from "./registry.ts";
 import * as T from "./threads.ts";
@@ -52,40 +53,120 @@ function conTranscript(t: T.Thread, sessionId: string, texto: string): string {
 
 async function send(sess: SessionRecord | undefined, text: string) {
   if (!sess) return false;
-  // Un Claude aparte recibe por su entrada estandar, que es del demonio: no hay
-  // carrera con el buzon ni dialogo de permisos que valga.
   const ap = sess.aparte ? apartes.get(sess.aparte) : undefined;
-  if (ap && ap.child.exitCode === null) return Ap.turno(ap, text);
+  if (ap) {
+    // En segundo plano el aparte recibe por su entrada estandar, que es del demonio.
+    if (ap.modo === "fondo") return Ap.vivo(ap) ? Ap.turnoStdin(ap, text) : false;
+    // La ventana aun no se ha registrado: se le guarda. Nada cae en otra sesion.
+    if (!ap.listo) { ap.cola.push(text); return true; }
+  }
   try { await deliver(sess, text); return true; }
   catch (e) { log("deliver-failed", sess.sessionId, String(e)); return false; }
 }
 
 /** Los Claudes aparte vivos, por id de spochie. */
 const apartes = new Map<string, Ap.Aparte>();
+/** Lanzamientos en curso, para que dos accept/take a la vez no abran dos ventanas. */
+const atendiendo = new Map<string, Promise<SessionRecord | null>>();
 
-/** Lanza un Claude aparte para el spochie en ese directorio y se lo asigna. Espera a
- *  que el hook SessionStart lo registre; si no aparece, se dice y se queda como estaba. */
-async function atender(t: T.Thread, cwd: string, primerTurnoExtra?: string): Promise<SessionRecord | null> {
-  if (apartes.has(t.id)) apartes.get(t.id)!.child.kill();
-  const ap = Ap.lanzar(t, cwd);
-  apartes.set(t.id, ap);
-  ap.child.on("error", e => log("aparte", t.id, "no arranca:", String(e)));
-  ap.child.on("exit", code => { if (apartes.get(t.id) === ap) apartes.delete(t.id); unregister(ap.sess.sessionId); log("aparte", t.id, "termino", code); });
-  // Un claude que no existe o no arranca muere en el acto; se le da un respiro.
-  await new Promise(r => setTimeout(r, 300));
-  if (ap.child.exitCode !== null) { log("aparte", t.id, "no arranca; mira", `${Ap.APARTE_DIR}/${t.id}.log`); apartes.delete(t.id); unregister(ap.sess.sessionId); return null; }
-  const sess = ap.sess;
-  const fresco = T.load(t.id) ?? t;
-  fresco.to = { ...fresco.to, sessionId: sess.sessionId, name: sess.name, cwd: sess.cwd, human: Cfg.load().human ?? fresco.to.human };
-  T.save(fresco);
-  Ap.turno(ap, Ap.primerTurno(fresco, sess.sessionId) + (primerTurnoExtra ? `\n\n${primerTurnoExtra}` : ""));
-  log("aparte", t.id, "atendido por", sess.name, "en", cwd);
-  return sess;
+/** Lanza (o reutiliza) el Claude aparte de un spochie en ese directorio y se lo asigna. */
+function atender(t: T.Thread, cwd: string): Promise<SessionRecord | null> {
+  const enCurso = atendiendo.get(t.id);
+  if (enCurso) return enCurso;
+  const p = atenderDeVerdad(t, cwd).catch(e => { log("aparte", t.id, "fallo:", String(e)); return null; }).finally(() => atendiendo.delete(t.id));
+  atendiendo.set(t.id, p);
+  return p;
 }
 
-/** Aviso corto a la sesion que lo acepto o lo tomo: la conversacion no va a entrar ahi. */
-const avisoAparte = (t: T.Thread, cwd: string) =>
-  `[spochie ${t.id} | ${t.subject}] abierto. Lo atiende un Claude aparte en ${cwd}; a esta sesion no le llegara la conversacion. Se ve en el hilo de Slack y con  spochie show ${t.id}. Para meter baza:  spochie say ${t.id} "..."`;
+const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Arranca un `claude -p` y comprueba que no muere en el acto. */
+async function arrancarFondo(t: T.Thread, cwd: string): Promise<Ap.Aparte | null> {
+  const ap = Ap.lanzar(t, cwd, "fondo");
+  if (!ap) return null;
+  apartes.set(t.id, ap);
+  ap.child!.on("error", e => log("aparte", t.id, "no arranca:", String(e)));
+  ap.child!.on("exit", code => { if (apartes.get(t.id) === ap) apartes.delete(t.id); unregister(ap.sess.sessionId); log("aparte", t.id, "termino", code); });
+  await dormir(300);
+  if (ap.child!.exitCode !== null) { log("aparte", t.id, "no arranca; mira", `${Ap.APARTE_DIR}/${t.id}.log`); apartes.delete(t.id); unregister(ap.sess.sessionId); return null; }
+  return ap;
+}
+
+/** Espera a que el hook SessionStart de la ventana escriba su registro con socket. */
+async function esperarVentana(ap: Ap.Aparte, ms: number): Promise<SessionRecord | undefined> {
+  const fin = Date.now() + ms;
+  while (Date.now() < fin) {
+    const real = Ap.registroVentana(ap, liveSessions());
+    if (real) return real;
+    await dormir(500);
+  }
+  return undefined;
+}
+
+/** La ventana vieja se entera de que el spochie se ha ido a otro sitio. */
+async function despedir(ap: Ap.Aparte, porque: string) {
+  if (ap.modo === "fondo") { Ap.matar(ap); return; }
+  const real = Ap.registroVentana(ap, liveSessions());
+  if (real) { try { await deliver(real, `[spochie ${ap.id}] ${porque}. Esta ventana ya no atiende nada: puedes cerrarla.`); } catch {} }
+  unregister(ap.sess.sessionId);
+}
+
+async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord | null> {
+  const viejo = apartes.get(t.id);
+  // Ya hay uno vivo en ese mismo repo: no se relanza. Es lo que pasaba en e856, donde
+  // dos accept seguidos mataron al primero y el segundo nacio en el repo equivocado.
+  if (viejo && Ap.vivo(viejo) && viejo.cwd === cwd && sessById(viejo.sess.sessionId)) { log("aparte", t.id, "ya vivo en", cwd); return viejo.sess; }
+  if (viejo) { apartes.delete(t.id); await despedir(viejo, `pasa a atenderse desde ${cwd}`); }
+
+  let ap = Ap.modo() === "ventana" ? Ap.lanzar(t, cwd, "ventana") : null;
+  if (ap) apartes.set(t.id, ap);
+  else {
+    if (Ap.modo() === "ventana") log("aparte", t.id, "no pude abrir una ventana; va en segundo plano");
+    ap = await arrancarFondo(t, cwd);
+    if (!ap) return null;
+  }
+
+  // El spochie apunta al aparte desde ya: lo que llegue mientras arranca se le guarda
+  // a el, no entra en la sesion donde trabaja la persona.
+  const fresco = T.load(t.id) ?? t;
+  fresco.to = { ...fresco.to, sessionId: ap.sess.sessionId, name: ap.sess.name, cwd, human: Cfg.load().human ?? fresco.to.human };
+  T.save(fresco);
+  const primero = Ap.primerTurno(fresco, ap.sess.sessionId, Ap.comandoCli(), cwd);
+
+  if (ap.modo === "fondo") {
+    Ap.turnoStdin(ap, primero);
+    log("aparte", t.id, "atendido en segundo plano en", cwd);
+    return ap.sess;
+  }
+
+  const real = await esperarVentana(ap, 60_000);
+  if (!real) {
+    log("aparte", t.id, "la ventana no se registro en 60 s (¿plugin viejo en esa sesion?); sigo en segundo plano");
+    unregister(ap.sess.sessionId);
+    const fondo = await arrancarFondo(t, cwd);
+    if (!fondo) { apartes.delete(t.id); return null; }
+    const f2 = T.load(t.id) ?? fresco;
+    f2.to = { ...f2.to, sessionId: fondo.sess.sessionId, name: fondo.sess.name };
+    T.save(f2);
+    Ap.turnoStdin(fondo, Ap.primerTurno(f2, fondo.sess.sessionId, Ap.comandoCli(), cwd));
+    for (const x of ap.cola) Ap.turnoStdin(fondo, x);
+    return fondo.sess;
+  }
+  ap.sess = real;
+  ap.listo = true;
+  await deliver(real, primero);
+  for (const x of ap.cola.splice(0)) await deliver(real, x);
+  log("aparte", t.id, "atendido en una ventana nueva, pid", real.pid, "en", cwd);
+  return real;
+}
+
+/** Donde se atiende, dicho en el hilo de Slack, que es donde lo ven las dos personas.
+ *  A las sesiones interactivas no se les dice nada mas: es lo que pidio Edu. */
+async function avisarDondeSeAtiende(t: T.Thread, sess: SessionRecord | null, cwd: string) {
+  if (!sess || !slack || !t.slack) return;
+  const como = apartes.get(t.id)?.modo === "ventana" ? "en una ventana nueva" : "en segundo plano";
+  await slack.aviso(t, `:desktop_computer: ${Cfg.load().human ?? "aqui"} lo atiende un Claude aparte ${como}, en \`${basename(cwd)}\`.`);
+}
 
 const sessById = (id: string) => liveSessions().find(s => s.sessionId === id);
 
@@ -185,13 +266,14 @@ async function handle(req: Req): Promise<any> {
       const yo = sessById(req.sessionId);
       let aparte: string | undefined;
       if (Cfg.load().aparte !== false && !req.aqui && yo && !yo.aparte && !t.from.sessionId.startsWith(yo.sessionId)) {
-        // No se espera a que arranque: el aviso llega a la sesion cuando este listo.
+        // No se espera a que arranque. A esta sesion no le llega nada mas: la respuesta
+        // a este comando es lo ultimo que ve del spochie.
         aparte = yo.cwd;
-        void atender(t, yo.cwd).then(s => s && send(yo, avisoAparte(t, yo.cwd)));
+        void atender(t, yo.cwd).then(s => avisarDondeSeAtiende(t, s, yo.cwd));
       }
       await refreshTranscript(t);
       log("accept", t.id, "por", t.acceptedBy, aparte ? `aparte en ${aparte}` : "aqui");
-      return { ok: true, id: t.id, state: t.state, aparte };
+      return { ok: true, id: t.id, state: t.state, aparte, ventana: aparte ? Ap.modo() === "ventana" : undefined };
     }
 
     case "say": {
@@ -290,8 +372,9 @@ async function handle(req: Req): Promise<any> {
     /** El hook SessionEnd: cerrar la pantalla cierra tus spochies vivos. */
     case "session-end": {
       const closed: string[] = [];
+      const porque = String(req.sessionId).startsWith("aparte-") ? "se cerro la ventana del Claude aparte" : "la otra sesion se cerro";
       for (const t of T.activeFor(req.sessionId)) {
-        await closeThread(t, "la otra sesion se cerro", req.sessionId);
+        await closeThread(t, porque, req.sessionId);
         closed.push(t.id);
       }
       return { ok: true, closed };
@@ -318,17 +401,26 @@ async function handle(req: Req): Promise<any> {
       const t = T.load(req.id);
       if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
       if (t.state === "closed") return { ok: false, error: `spochie ${req.id} esta cerrado` };
-      if (t.state === "open" && !t.to.sessionId.startsWith("slack:") && sessById(t.to.sessionId)) return { ok: false, error: `spochie ${req.id} ya lo atiende ${t.to.name}` };
+      const actual = t.state === "open" && !t.to.sessionId.startsWith("slack:") ? sessById(t.to.sessionId) : undefined;
+      // Un aparte si se puede mover de repo con take; otra sesion interactiva viva, no.
+      if (actual && !actual.aparte) return { ok: false, error: `spochie ${req.id} ya lo atiende ${t.to.name}` };
+      // Tomarlo desde una sesion fija el directorio. Si ya esta aceptado y toca Claude
+      // aparte, se lanza ahi (o se deja el que ya hay si es el mismo repo); si no, la
+      // invitacion entra en la sesion para que el humano acepte, y el aparte nace al aceptar.
+      if (t.state === "open" && Cfg.load().aparte !== false && !req.aqui) {
+        const mismo = apartes.get(t.id)?.cwd === me.cwd && actual?.aparte;
+        void atender(t, me.cwd).then(s => { if (!mismo) return avisarDondeSeAtiende(t, s, me.cwd); });
+        log("take", t.id, "->", me.name, mismo ? "ya estaba en" : "aparte en", me.cwd);
+        return { ok: true, id: t.id, aparte: me.cwd, already: Boolean(mismo), ventana: Ap.modo() === "ventana" };
+      }
+      if (actual?.aparte) {
+        // --aqui sobre un spochie que atendia un aparte: el aparte se despide.
+        const ap = apartes.get(t.id) ?? { id: t.id, cwd: actual.cwd, modo: "ventana" as const, sess: actual, cola: [], listo: true, muerto: false };
+        apartes.delete(t.id);
+        await despedir(ap, `lo atiende ahora la sesion ${me.name}`);
+      }
       t.to = { ...t.to, sessionId: me.sessionId, name: me.name, cwd: me.cwd, human: Cfg.load().human ?? t.to.human };
       T.save(t);
-      // Tomarlo desde una sesion fija el directorio. Si ya esta aceptado (desde Slack) y
-      // toca Claude aparte, se lanza ahi mismo; si no, la invitacion entra en la sesion
-      // para que el humano acepte, y el aparte nace al aceptar.
-      if (t.state === "open" && Cfg.load().aparte !== false && !req.aqui) {
-        void atender(t, me.cwd).then(s => s && send(me, avisoAparte(t, me.cwd)));
-        log("take", t.id, "->", me.name, "aparte en", me.cwd);
-        return { ok: true, id: t.id, aparte: me.cwd };
-      }
       await send(me, t.state === "open" ? T.renderAccepted(t, me.sessionId) : T.renderInvite(t, me.sessionId));
       log("take", t.id, "->", me.name);
       return { ok: true, id: t.id };
@@ -368,51 +460,41 @@ async function handle(req: Req): Promise<any> {
 /**
  * A que sesion local le toca un spochie que llega de fuera.
  *
- * La primera regla era "la rama del sobre tiene que existir en su checkout". Se cayo
- * con el primer caso realista: Alex en feat/modal-guardar y Edu en feat/guardar-perfil,
- * repos distintos y ramas distintas, que es justo el caso para el que existe spochie.
- * Ahora: la rama si encaja, si no la unica sesion viva, y si hay varias no se reparte
- * a ciegas: se avisa a todas y elige la persona con `spochie take <id>`.
+ * Siempre a UNA, y con la invitacion entera. La version anterior, con varias sesiones
+ * y sin rama que encajara, mandaba a todas una linea de "hay varias, haz take" sin el
+ * mensaje: en e856 la pregunta del otro lado no llego a ninguna terminal, y el Claude de
+ * la terminal equivocada hizo take por su cuenta. Orden: la rama del sobre existe en
+ * el checkout; el asunto o el primer mensaje nombran el directorio; y si no, la
+ * sesion donde la persona escribio por ultima vez.
  */
-function candidates(t: T.Thread): { pick: SessionRecord | null; ambiguas: SessionRecord[] } {
+function elegir(t: T.Thread): { pick: SessionRecord | null; otras: number } {
   // Un Claude aparte atiende un solo spochie: nunca es candidato para otro.
   const vivas = liveSessions().filter(s => !s.aparte);
-  if (vivas.length === 0) return { pick: null, ambiguas: [] };
+  if (vivas.length === 0) return { pick: null, otras: 0 };
+  const otras = vivas.length - 1;
   const porRama = vivas.filter(s => repoMatches(s.cwd, t.context.branch));
-  if (porRama.length === 1) return { pick: porRama[0], ambiguas: [] };
-  if (porRama.length > 1) return { pick: null, ambiguas: porRama };
-  if (vivas.length === 1) return { pick: vivas[0], ambiguas: [] };
-  return { pick: null, ambiguas: vivas };
+  if (porRama.length) return { pick: porRama[0], otras };
+  const texto = `${t.subject}\n${t.messages[0]?.text ?? ""}`.toLowerCase();
+  const porNombre = vivas.filter(s => { const b = basename(s.cwd).toLowerCase(); return b.length >= 3 && texto.includes(b); });
+  if (porNombre.length) return { pick: porNombre[0], otras };
+  return { pick: vivas[0], otras };
 }
 
-/** Entrega la invitacion a quien le toque, o pregunta si no esta claro. */
+/** Entrega la invitacion a la sesion que le toca. */
 async function assign(t: T.Thread): Promise<string | null> {
   if (t.state !== "pending" || !t.to.sessionId.startsWith("slack:")) return null;
   // Quien abrio el tunel no es el destinatario: si se lo repartiera a si mismo,
   // se pisaria el nombre del otro lado y el transcript diria "Alex y Alex".
   const yo = Cfg.load().slack?.userId;
   if (yo && t.from.slackUser === yo) return null;
-  const { pick, ambiguas } = candidates(t);
-  if (pick) {
-    t.to = { ...t.to, sessionId: pick.sessionId, name: pick.name, cwd: pick.cwd, human: Cfg.load().human ?? t.to.human };
-    T.save(t);
-    await send(pick, T.renderInvite(t, pick.sessionId));
-    log("assign", t.id, "->", pick.name);
-    return pick.sessionId;
-  }
-  // El aviso de "hay varias sesiones" se manda una vez por sesion, no cada vez que
-  // entra un mensaje en el hilo: medido en el laboratorio, cinco sesiones recibian
-  // el mismo aviso diez veces en dos minutos mientras nadie hacia `take`.
-  const avisadas = new Set(t.avisoTake ?? []);
-  const nuevas = ambiguas.filter(s => !avisadas.has(s.sessionId));
-  for (const s of nuevas) {
-    await send(s, `[spochie ${t.id}] ${t.from.human ?? t.from.name} quiere abrir un tunel sobre "${t.subject}", y hay varias sesiones tuyas abiertas.
-Si esto es para esta sesion, preguntale a tu humano y ejecuta:  spochie take ${t.id}`);
-    avisadas.add(s.sessionId);
-  }
-  if (nuevas.length) { t.avisoTake = [...avisadas]; T.save(t); }
-  if (ambiguas.length) log("assign", t.id, "ambiguo entre", ambiguas.length, nuevas.length ? `avisadas ${nuevas.length}` : "ya avisadas");
-  return null;
+  const { pick, otras } = elegir(t);
+  if (!pick) return null;
+  t.to = { ...t.to, sessionId: pick.sessionId, name: pick.name, cwd: pick.cwd, human: Cfg.load().human ?? t.to.human };
+  T.save(t);
+  const extra = otras ? `\nSi esto es para otra sesion tuya (hay ${otras} mas abiertas), tu humano lo dice y desde alli:  spochie take ${t.id}` : "";
+  await send(pick, T.renderInvite(t, pick.sessionId) + extra);
+  log("assign", t.id, "->", pick.name, otras ? `(${otras} sesiones mas)` : "");
+  return pick.sessionId;
 }
 
 /** Aceptar escribiendo en el hilo de Slack. Hace lo mismo que `spochie accept`. */
@@ -430,17 +512,21 @@ async function onSlackAccept(t: T.Thread, quien: string) {
   T.save(fresco);
   await sendToSide(fresco, fresco.from, T.renderAccepted(fresco, fresco.from.sessionId));
   const local = sessById(fresco.to.sessionId);
-  if (local) await send(local, `[spochie ${fresco.id} | ${fresco.subject}] tu humano lo ha aceptado ${quien}. El tunel esta abierto: puedes contestar con  spochie say ${fresco.id} "<texto>"`);
-  // Aceptado desde Slack sin que ninguna sesion lo tenga: antes la conversacion se
-  // quedaba "sin sesion local" hasta que alguien hiciera take. Ahora nace un Claude
-  // aparte en el directorio de la sesion mas reciente, y a todas se les dice donde.
-  if (!local && fresco.to.sessionId.startsWith("slack:") && Cfg.load().aparte !== false) {
-    const vivas = liveSessions().filter(s => !s.aparte).sort((a, b) => b.startedAt - a.startedAt);
-    const cwd = vivas[0]?.cwd ?? process.cwd();
-    void atender(fresco, cwd).then(async s => { if (s) for (const v of vivas) await send(v, avisoAparte(fresco, cwd) + `  Si el repo bueno es otro:  spochie take ${fresco.id}`); });
+  if (local && !local.aparte) {
+    if (Cfg.load().aparte !== false && !fresco.from.sessionId.startsWith(local.sessionId)) {
+      // Una linea, y es la ultima que ve esa sesion: sin ella su Claude se queda con la
+      // pregunta de "¿lo aceptas?" en el aire y acaba haciendo accept o take por su cuenta.
+      await send(local, `[spochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
+      void atender(fresco, local.cwd).then(s => avisarDondeSeAtiende(fresco, s, local.cwd));
+    } else {
+      await send(local, `[spochie ${fresco.id} | ${fresco.subject}] tu humano lo ha aceptado ${quien}. El tunel esta abierto: puedes contestar con  spochie say ${fresco.id} "<texto>"`);
+    }
+  } else if (!local) {
+    // Ninguna sesion de Claude Code abierta en esta maquina: no hay repo donde nacer.
+    if (slack && fresco.slack) await slack.aviso(fresco, `:warning: ${Cfg.load().human ?? "el otro lado"} no tiene ninguna sesion de Claude Code abierta. El spochie espera: al abrir una en el repo, \`spochie take ${fresco.id}\`.`);
   }
   await refreshTranscript(fresco);
-  log("accept", fresco.id, quien);
+  log("accept", fresco.id, quien, local ? `-> ${local.name}` : "sin sesion local");
 }
 
 /** El otro lado ha aceptado: quien abrio el tunel se entera y sale de "pending". */
@@ -546,7 +632,9 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string) {
   await refreshTranscript(t);
   log("close", t.id, reason, notified.join(" "));
   const ap = apartes.get(t.id);
-  if (ap) { setTimeout(() => ap.child.kill(), 15_000).unref(); }
+  if (ap?.modo === "fondo") setTimeout(() => Ap.matar(ap), 15_000).unref();
+  if (ap?.modo === "ventana" && ap.listo) { const r = sessById(ap.sess.sessionId); if (r) await send(r, `Este spochie ha terminado. Puedes cerrar esta ventana.`); }
+  if (ap) apartes.delete(t.id);
 }
 
 async function tick() {

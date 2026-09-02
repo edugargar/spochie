@@ -3,17 +3,21 @@
  *
  * Un spochie que entra en la sesion donde estas trabajando te emborrona la pantalla
  * con una conversacion que no es la tuya. Asi que la sesion interactiva solo recibe
- * el aviso de apertura, y la conversacion la atiende un `claude -p` propio, lanzado
- * por el demonio en el repo que toque, con permisos de solo lectura y la CLI de
- * spochie. Vive lo que vive el spochie. Tu lo ves todo en Slack y en el transcript,
- * y puedes meter baza desde el hilo o con `spochie say` desde cualquier sesion.
+ * la invitacion, y la conversacion la atiende un Claude propio en una VENTANA NUEVA
+ * de la terminal, abierta por el demonio en el repo que toque, con permisos de solo
+ * lectura y la CLI de spochie. Lo ves trabajar ahi y puedes escribirle. Vive lo que
+ * vive el spochie.
  *
- * Solo lectura de verdad: en modo -p las herramientas no listadas se deniegan sin
- * preguntar, y aqui no hay Edit ni Write ni un Bash suelto. Lo unico que puede correr
- * es git de lectura y los subcomandos de spochie que no abren ni sueltan nada.
+ * Si no hay forma de abrir una ventana (Linux sin escritorio, tests, o la ventana no
+ * se registra a tiempo) el aparte corre en segundo plano como `claude -p`, con su log
+ * en ~/.claude/spochie/aparte/<id>.log. Mismo Claude, misma correa, sin pantalla.
+ *
+ * Solo lectura de verdad: no hay Edit ni Write ni un Bash suelto. Lo unico que puede
+ * correr es git de lectura y los subcomandos de spochie que no abren ni sueltan nada.
+ * En la ventana, cualquier otra cosa le pide permiso al humano que la mira.
  */
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, openSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { chmodSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROOT, ensureDirs } from "./paths.ts";
@@ -26,10 +30,10 @@ export const APARTE_DIR = join(ROOT, "aparte");
 /** Como invoca spochie el Claude aparte: el mismo ejecutable que lleva este demonio. */
 export function comandoCli(): string {
   if (import.meta.path.includes("$bunfs")) return process.execPath;
-  return `bun run ${join(HERE, "cli.ts")}`;
+  return `${process.execPath} run ${join(HERE, "cli.ts")}`;
 }
 
-/** Lo unico que el Claude aparte puede ejecutar. */
+/** Lo unico que el Claude aparte puede ejecutar sin preguntar. */
 export function herramientasPermitidas(cli = comandoCli()): string[] {
   const git = ["diff", "log", "show", "status", "branch", "blame", "grep", "ls-files"].map(g => `Bash(git ${g}:*)`);
   const sp = ["say", "patch", "branch", "show", "list", "close"].map(c => `Bash(${cli} ${c}:*)`);
@@ -37,17 +41,17 @@ export function herramientasPermitidas(cli = comandoCli()): string[] {
 }
 
 /** El primer turno: quien es, que spochie atiende, lo dicho hasta ahora, y como contestar. */
-export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli()): string {
+export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli(), cwd = process.cwd()): string {
   const otro = T.otherSide(t, sessionId);
   const historia = t.messages.filter(m => m.retenido !== "si" && m.retenido !== "descartado")
     .map(m => T.renderMessage(t, m, sessionId)).join("\n\n");
   return [
-    `Eres el Claude que atiende el spochie ${t.id} en nombre de ${T.mySide(t, sessionId).human ?? "tu humano"}, desde ${process.cwd()}.`,
+    `Eres el Claude que atiende el spochie ${t.id} en nombre de ${T.mySide(t, sessionId).human ?? "tu humano"}, desde ${cwd}.`,
     `Un spochie es un tunel con la sesion de Claude de ${otro.human ?? otro.name}, otra persona. El tunel YA esta abierto: tu humano lo acepto.`,
     `Tu trabajo: leer este repo y contestar lo que pregunten sobre el, con hechos de los ficheros. Nada mas.`,
     `Contestas con:  ${cli} say ${t.id} "<texto>"   (o --file <ruta> si es largo). Un parche: ${cli} patch ${t.id} --from-git. Cerrar cuando este resuelto: ${cli} close ${t.id} --reason "...".`,
     `No puedes escribir ficheros ni correr nada que no sea git de lectura y spochie: si te piden otra cosa, dilo por el tunel y para.`,
-    `Cada mensaje nuevo del otro lado te llegara como un turno mas. Contesta a cada uno por el tunel, no aqui.`,
+    `Cada mensaje nuevo del otro lado te llegara como un turno mas. Contesta a cada uno por el tunel, no aqui. Si tu humano te escribe en esta ventana, eso si es para ti.`,
     ``,
     `Asunto: ${t.subject}`,
     ``,
@@ -55,19 +59,112 @@ export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli()):
   ].join("\n");
 }
 
-export type Aparte = { id: string; child: ChildProcess; cwd: string; sess: SessionRecord };
+export type Modo = "ventana" | "fondo";
+export type Aparte = {
+  id: string; cwd: string; modo: Modo; sess: SessionRecord;
+  /** Solo en modo fondo: el `claude -p` cuyo stdin es nuestro. */
+  child?: ChildProcess;
+  /** Modo ventana: lo que llego antes de que la ventana se registrara. */
+  cola: string[];
+  /** Modo ventana: el hook de su sesion ya escribio el registro con socket. */
+  listo: boolean;
+  /** Modo fondo: el proceso ha muerto. */
+  muerto: boolean;
+};
 
-/** El id de sesion de un aparte. Fijo por spochie: la CLI que corre dentro se
- *  reconoce por SPOCHIE_APARTE, no por el socket. */
-export const sesionAparte = (id: string) => `aparte-${id}`;
+/** El id de sesion de un aparte. Uno por lanzamiento: si el spochie se mueve de repo
+ *  con `take`, la ventana vieja y la nueva no comparten registro, y cerrar la vieja
+ *  no cierra el spochie. La CLI que corre dentro lo sabe por SPOCHIE_APARTE_SESION. */
+export const sesionAparte = (id: string) => `aparte-${id}-${Date.now().toString(36)}`;
+export const nombreAparte = (id: string) => `aparte-${id}`;
+/** El socket del registro provisional que escribe el demonio en modo ventana, hasta
+ *  que el hook SessionStart de la ventana lo sustituya por el de verdad. */
+export const SOCKET_PENDIENTE = "(esperando a la ventana)";
 
-/** Lanza el Claude aparte para un spochie en un directorio y lo registra el demonio
- *  mismo, sin esperar al hook SessionStart del plugin instalado (que puede ser de una
- *  version que no sabe de apartes). La entrega va por stdin, asi que el registro no
- *  necesita socket. */
-export function lanzar(t: T.Thread, cwd: string): Aparte {
+/**
+ * Como se abre el aparte.
+ *   SPOCHIE_VENTANA=fondo      siempre en segundo plano (tests, servidores)
+ *   SPOCHIE_VENTANA=<programa> ese programa recibe el script y lo corre donde quiera (tests)
+ *   sin nada                   ventana en macOS, fondo en el resto
+ */
+export function modo(): Modo {
+  const v = process.env.SPOCHIE_VENTANA;
+  if (v === "fondo") return "fondo";
+  if (v && v !== "ventana") return "ventana";
+  return process.platform === "darwin" ? "ventana" : "fondo";
+}
+
+const sq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/** El script que corre la ventana nueva: entra en el repo y arranca claude con la correa.
+ *  Rutas absolutas y PATH del demonio, porque una ventana abierta por AppleScript no
+ *  pasa por el perfil de la shell y `claude` no estaria en su PATH. */
+export function scriptVentana(t: T.Thread, cwd: string, sessionId: string): string {
+  const claude = Bun.which("claude") ?? "claude";
+  // Un demonio que corre desde un checkout de desarrollo (no desde el plugin instalado
+  // ni compilado) le presta su propio plugin a la ventana, para que el hook que la
+  // registra sea de la misma version que el demonio que la espera.
+  const dev = !import.meta.path.includes("$bunfs") && !HERE.includes("/plugins/cache/") ? join(HERE, "..") : null;
+  return [
+    `#!/bin/sh`,
+    `# spochie ${t.id}: ${t.subject.replace(/\n/g, " ")}`,
+    `export PATH=${sq(process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")}`,
+    `export SPOCHIE_APARTE=${sq(t.id)}`,
+    `export SPOCHIE_APARTE_SESION=${sq(sessionId)}`,
+    process.env.SPOCHIE_HOME ? `export SPOCHIE_HOME=${sq(process.env.SPOCHIE_HOME)}` : `unset SPOCHIE_HOME`,
+    `cd ${sq(cwd)} || exit 1`,
+    `printf '\\033]0;spochie ${t.id}\\007'`,
+    `echo ${sq(`spochie ${t.id} · ${t.subject}`)}`,
+    `echo ${sq(`Claude aparte: solo lectura + spochie say. Puedes escribirle aqui. Cerrar la ventana cierra el spochie.`)}`,
+    `exec ${sq(claude)} --name ${sq(`spochie-${t.id}`)} --permission-mode default --allowedTools ${sq(herramientasPermitidas().join(","))} --settings ${sq(JSON.stringify({ crossSessionInbound: "accept" }))}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
+    ``,
+  ].join("\n");
+}
+
+/** Abre una ventana de terminal que corre el script. Devuelve como lo hizo, o null.
+ *  En macOS es Terminal.app con `open`, que no pide permisos. iTerm por AppleScript
+ *  se probo: desde el demonio de launchd falla por el permiso de Automatizacion, y
+ *  desde una shell se queda colgado esperando el dialogo. Un `.command` en Terminal
+ *  abrio la ventana en 4 s sin preguntar nada. */
+export function abrirVentana(script: string): string | null {
+  const custom = process.env.SPOCHIE_VENTANA;
+  if (custom && custom !== "ventana") {
+    const p = spawn(custom, [script], { detached: true, stdio: "ignore" });
+    p.on("error", () => {});
+    p.unref();
+    return custom;
+  }
+  if (process.platform !== "darwin") return null;
+  const r = spawnSync("open", ["-a", "Terminal", script], { encoding: "utf8", timeout: 15_000 });
+  return r.status === 0 ? "Terminal" : null;
+}
+
+/**
+ * Lanza el Claude aparte para un spochie en un directorio.
+ *
+ * En modo ventana el demonio escribe un registro provisional (para que el spochie
+ * apunte ya al aparte y nada mas caiga en la sesion interactiva) y abre la ventana;
+ * el hook SessionStart de esa ventana sobreescribe el registro con su socket, y
+ * entonces se le entrega lo acumulado. En modo fondo el registro lo hace el demonio
+ * y la entrega va por stdin, sin socket.
+ */
+export function lanzar(t: T.Thread, cwd: string, como: Modo = modo()): Aparte | null {
   ensureDirs();
   mkdirSync(APARTE_DIR, { recursive: true, mode: 0o700 });
+  const base = { sessionId: sesionAparte(t.id), name: nombreAparte(t.id), cwd, startedAt: Date.now(), aparte: t.id };
+  const env = { ...process.env, SPOCHIE_APARTE: t.id, SPOCHIE_APARTE_SESION: base.sessionId };
+
+  if (como === "ventana") {
+    const script = join(APARTE_DIR, `${t.id}.command`);
+    writeFileSync(script, scriptVentana(t, cwd, base.sessionId), { mode: 0o700 });
+    chmodSync(script, 0o700);
+    const sess: SessionRecord = { ...base, socket: SOCKET_PENDIENTE, token: "", pid: process.pid };
+    register(sess);
+    const con = abrirVentana(script);
+    if (!con) return null;
+    return { id: t.id, cwd, modo: "ventana", sess, cola: [], listo: false, muerto: false };
+  }
+
   const out = openSync(join(APARTE_DIR, `${t.id}.log`), "a");
   const child = spawn("claude", [
     "-p", "--verbose",
@@ -76,22 +173,31 @@ export function lanzar(t: T.Thread, cwd: string): Aparte {
     "--name", `spochie-${t.id}`,
     "--permission-mode", "default",
     "--allowedTools", herramientasPermitidas().join(","),
-  ], {
-    cwd,
-    env: { ...process.env, SPOCHIE_APARTE: t.id },
-    stdio: ["pipe", out, out],
-  });
+  ], { cwd, env, stdio: ["pipe", out, out] });
   child.on("error", () => {});
-  const sess: SessionRecord = {
-    sessionId: sesionAparte(t.id), name: `aparte-${t.id}`, cwd, socket: "(stdin)", token: "",
-    pid: child.pid ?? 0, startedAt: Date.now(), aparte: t.id,
-  };
+  const sess: SessionRecord = { ...base, socket: "(stdin)", token: "", pid: child.pid ?? 0 };
   register(sess);
-  return { id: t.id, child, cwd, sess };
+  const a: Aparte = { id: t.id, cwd, modo: "fondo", sess, child, cola: [], listo: true, muerto: false };
+  child.on("exit", () => { a.muerto = true; });
+  return a;
 }
 
-/** Un turno por la entrada estandar del aparte, que es el canal que el demonio posee. */
-export function turno(a: Aparte, content: string): boolean {
-  if (!a.child.stdin || a.child.stdin.destroyed || a.child.exitCode !== null) return false;
-  return a.child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n");
+/** Un turno por la entrada estandar del aparte en modo fondo. */
+export function turnoStdin(a: Aparte, content: string): boolean {
+  const c = a.child;
+  if (!c || !c.stdin || c.stdin.destroyed || c.exitCode !== null) return false;
+  return c.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n");
+}
+
+/** El registro de verdad que deja el hook de la ventana, si ya esta. */
+export function registroVentana(a: Aparte, vivas: SessionRecord[]): SessionRecord | undefined {
+  return vivas.find(s => s.aparte === a.id && s.socket !== SOCKET_PENDIENTE && s.socket !== "(stdin)");
+}
+
+export function vivo(a: Aparte): boolean {
+  return a.modo === "fondo" ? !a.muerto : true;
+}
+
+export function matar(a: Aparte) {
+  if (a.child) { try { a.child.kill(); } catch {} }
 }

@@ -76,7 +76,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-reci
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: HOME }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: HOME, SPOCHIE_VENTANA: "fondo" }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
@@ -86,20 +86,28 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-reci
   // La invitacion si entra en la sesion: es el humano quien acepta.
   expect(await hasta(() => B.got.some(x => x.includes(`spochie accept ${open.id}`)))).toBe(true);
 
+  const antes = B.got.length;
   const acc = await rpc({ op: "accept", sessionId: "PB", id: open.id, by: "Edu" });
   expect(acc.ok).toBe(true);
   expect(acc.aparte).toBe(REPO_B);
+  expect(acc.ventana).toBe(false);
   // El aparte nace en el directorio de la sesion que acepto y recibe el primer turno con el asunto.
   expect(await hasta(() => recibido().includes("Asunto: el boton") && recibido().includes("mira tu Button"))).toBe(true);
-  expect(await hasta(() => B.got.some(x => x.includes(`Lo atiende un Claude aparte en ${REPO_B}`)))).toBe(true);
+  // Aceptar otra vez, o tomarlo desde el mismo repo, no relanza nada: un solo primer turno.
+  expect((await rpc({ op: "accept", sessionId: "PB", id: open.id, by: "Edu" })).already).toBe(true);
+  const take = await rpc({ op: "take", sessionId: "PB", id: open.id });
+  expect(take.ok).toBe(true);
+  expect(take.already).toBe(true);
+  await sleep(500);
+  expect(recibido().split("Asunto: el boton").length - 1).toBe(1);
 
-  // Lo que dice A ahora va al aparte, no a la sesion B.
-  const antes = B.got.length;
+  // Lo que dice A ahora va al aparte, no a la sesion B. Y a B no le ha llegado NADA
+  // desde la invitacion: ni "abierto", ni "lo atiende", ni la conversacion.
   const say = await rpc({ op: "say", sessionId: "PA", id: open.id, text: "es el min-width del contenedor, seguro" });
   expect(say.delivered).toBe(true);
   expect(await hasta(() => recibido().includes("min-width del contenedor"))).toBe(true);
   await sleep(300);
-  expect(B.got.slice(antes).some(x => x.includes("min-width"))).toBe(false);
+  expect(B.got.slice(antes)).toEqual([]);
 
   // Un aparte nunca es candidato para otro spochie.
   const s = await rpc({ op: "sessions" });
