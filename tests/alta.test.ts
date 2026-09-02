@@ -38,9 +38,10 @@ import { crearInvitacion, textoInvitacion } from "../src/alta.ts";
 import * as Cfg from "../src/config.ts";
 
 test("la invitacion dirigida lleva para quien es y quien invita, y sobrevive al pegado", () => {
-  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40), t: "Equipo", u: "U0ALEX01", i: { id: "U0EDU001", name: "Edu" } });
+  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40), t: "Equipo", u: "U0ALEX01", n: "Alex", i: { id: "U0EDU001", name: "Edu" } });
   const leida = leerInvitacion(limpiarCadena(textoInvitacion(blob, "Edu"))!);
   expect(leida?.u).toBe("U0ALEX01");
+  expect(leida?.n).toBe("Alex");
   expect(leida?.i).toEqual({ id: "U0EDU001", name: "Edu" });
 });
 
