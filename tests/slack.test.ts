@@ -180,3 +180,11 @@ test("el buzon se mira tan a menudo como el cupo de la app permita al equipo rea
   // 25 demonios a esa cadencia gastan 25 llamadas por minuto, la mitad del cupo.
   expect(Math.round(25 * 60_000 / cadenciaDescubrir(25))).toBe(25);
 });
+
+test("un sobre con un id que no es un id no es un sobre", () => {
+  const msg = (id: string) => ({ metadata: { event_type: EVENT, event_payload: { id, from: "U1", kind: "invite" } } });
+  expect(envelopeOf(msg("../settings"))).toBeNull();
+  expect(envelopeOf(msg("a/b"))).toBeNull();
+  expect(envelopeOf(msg("x".repeat(40)))).toBeNull();
+  expect(envelopeOf(msg("e856"))).not.toBeNull();
+});

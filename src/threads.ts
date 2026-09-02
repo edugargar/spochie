@@ -67,7 +67,8 @@ export type Thread = {
   messages: Msg[];
 };
 
-const file = (id: string) => join(THREADS_DIR, `${id}.json`);
+/** El id acaba en un nombre de fichero: se limpia aqui tambien, venga de donde venga. */
+const file = (id: string) => join(THREADS_DIR, `${String(id).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 32) || "x"}.json`);
 const VISTOS = join(THREADS_DIR, "..", "vistos.json");
 
 /**

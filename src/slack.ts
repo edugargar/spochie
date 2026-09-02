@@ -13,9 +13,9 @@
  * que resolveria el problema en una llamada pero exige el scope `search:read`.
  *
  * En su lugar todo el trafico vive en el DM entre el BOT y cada persona. Ese DM es el
- * mismo canal visto desde los dos lados (verificado: D0XXXXXXXXX desde el bot y desde
- * el usuario), asi que cada demonio consulta exactamente UN canal para lo que le llega,
- * mas un hilo por spochie abierto. Postea y lee el bot; el token de usuario solo se usa
+ * mismo canal visto desde los dos lados (verificado con un DM real), asi que cada
+ * demonio consulta exactamente UN canal para lo que le llega, mas un hilo por spochie
+ * abierto. Postea y lee el bot; el token de usuario solo se usa
  * para buscar personas, que es lo unico que el bot no puede hacer.
  */
 import * as Cfg from "./config.ts";
@@ -63,9 +63,14 @@ export function chunk(text: string, size = 2800, max = 12): string[] {
   return out.length > max ? [...out.slice(0, max - 1), "_(sigue en el transcript)_"] : out;
 }
 
+/** Un id de spochie es corto y de letras y numeros: acaba siendo nombre de fichero. */
+export const ID_VALIDO = /^[A-Za-z0-9_-]{1,32}$/;
+
 export function envelopeOf(msg: any): Envelope | null {
   const p = msg?.metadata?.event_payload;
-  return msg?.metadata?.event_type === EVENT && p?.id && p?.from ? (p as Envelope) : null;
+  // El id viene de fuera y termina en join(THREADS_DIR, id + ".json"): un "../settings"
+  // escribiria fuera del directorio de hilos. Sin id valido no hay sobre.
+  return msg?.metadata?.event_type === EVENT && typeof p?.id === "string" && ID_VALIDO.test(p.id) && p?.from ? (p as Envelope) : null;
 }
 
 /** Un aviso del sistema, en una linea y en cristiano. */
