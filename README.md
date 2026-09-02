@@ -16,10 +16,30 @@
   <a href="#usage">Usage</a> ·
   <a href="#rules-that-are-built-not-written">Rules</a> ·
   <a href="#security-model">Security</a> ·
-  <a href="#development">Development</a>
+  <a href="#development">Development</a> ·
+  <a href="#license">License</a>
 </p>
 
 ---
+
+## What spochie is
+
+spochie is a Claude Code plugin that lets your Claude talk to a teammate's Claude. You
+ask a question about their branch, their repo, or their machine; your Claude opens a
+**spochie** (a short, scoped tunnel) to theirs; theirs reads its own local files and
+answers through the tunnel; the answer arrives in your session as one more turn. The
+other person has to say yes before anything opens, and both of you see the whole
+exchange in a Slack thread, where you can step in at any time.
+
+Under the hood it is a small daemon on each machine, the inbox socket that Claude Code
+already exposes for every session, and a Slack bot DM used as transport and as the
+human-visible record. Nobody writes on anyone else's machine: what travels is text, a
+patch to apply if it convinces you, or a branch name. The Claude that answers on the
+other side runs in its own terminal window, read-only, so the person's working session
+is never interrupted by someone else's conversation.
+
+It is called spochie after Poochie, the dog with the sunglasses that Itchy & Scratchy
+got so the show would be "cooler". Say it as you like; the CLI is `spochie`.
 
 ## The problem
 
@@ -389,8 +409,9 @@ src/
   selftest.ts   the whole loop, locally
   doctor.ts     what has to be right
 commands/       /spochie and /spochie:join
-hooks/          SessionStart (fetches the binary if Bun is missing) and SessionEnd
-bin/spochie     picks the downloaded binary or Bun
+hooks/          SessionStart (fetches and verifies the binary if Bun is missing),
+                UserPromptSubmit (marks the session you are typing in) and SessionEnd
+bin/spochie     runs the verified binary of this version, or Bun over the source
 scripts/        assistants for the things only a person can do
 ```
 
@@ -402,5 +423,9 @@ The CLI speaks Spanish; that's where it was born. Manual install without the plu
 for wiring from your `~/.claude/settings.json`.
 
 ---
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 Eduardo Garcia-Garzon.
 
 <p align="center"><sub>Named after Poochie, the dog they added to Itchy &amp; Scratchy to make it "cooler". The joke here is that this one actually does something.</sub></p>
