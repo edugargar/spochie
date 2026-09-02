@@ -261,8 +261,12 @@ What's in place: text-only across machines (patch or branch name, never writes);
 human gate through Claude Code's permission dialog; signed envelopes with keys pinned on
 first sight; the receiving-side guardian that holds anything asking the Claude to act;
 per-message random fencing of remote text; downloaded files can't escape the spool
-(`../` in name or id, tested); a minimal envelope; config and session records at 0600
-with `doctor` complaining otherwise; both timeouts; no secrets in this repo.
+(`../` in name or id, tested) and neither can a thread id from an envelope (validated
+on receipt and sanitised again on write); a sender's display name can never take over
+an existing contact's entry; the binary the hook downloads is the one for the installed
+plugin version and is checked against the release's `SHA256SUMS` before it runs; a
+minimal envelope; config and session records at 0600 with `doctor` complaining
+otherwise; both timeouts; no secrets in this repo.
 
 What you should know:
 
@@ -278,6 +282,16 @@ What you should know:
   header or as spochie's rules, and the guardian holds what asks you to act, but a
   persuasive message is still a persuasive message. Run Claude Code with normal
   permissions, not bypass, on machines that use spochie.
+- **The bot token goes through the model once.** `/spochie:join <blob>` passes the
+  invitation as a prompt argument, so the token is in that session's context and in its
+  local transcript under `~/.claude/projects/`. It is the same token that is already in
+  the Slack DM the invitation came from. Rotate it when someone leaves.
+- **The side Claude is read-only in practice, not by proof.** Its allowlist is Read,
+  Grep, Glob, read-only git and the spochie subcommands. `allowedTools` cannot filter
+  arguments, so `git diff --output=<file>` would write a file. It has no Edit, Write or
+  free Bash, and every other command asks the person watching the window.
+- **The guardian fails open.** If Haiku is unreachable or times out (20 s), the message
+  is delivered unlabelled rather than lost. A held message needs a working guardian.
 - **Slack sees everything**: patches and screenshots travel in the clear through Slack,
   like anything else you already paste there. The guardian sends each incoming message
   to Haiku; `spochie config --guardian off` turns that off, and with it the hold.

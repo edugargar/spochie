@@ -1,6 +1,6 @@
 {
   "name": "spochie",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread",
   "type": "module",
