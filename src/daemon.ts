@@ -349,11 +349,18 @@ async function assign(t: T.Thread): Promise<string | null> {
     log("assign", t.id, "->", pick.name);
     return pick.sessionId;
   }
-  for (const s of ambiguas) {
+  // El aviso de "hay varias sesiones" se manda una vez por sesion, no cada vez que
+  // entra un mensaje en el hilo: medido en el laboratorio, cinco sesiones recibian
+  // el mismo aviso diez veces en dos minutos mientras nadie hacia `take`.
+  const avisadas = new Set(t.avisoTake ?? []);
+  const nuevas = ambiguas.filter(s => !avisadas.has(s.sessionId));
+  for (const s of nuevas) {
     await send(s, `[spochie ${t.id}] ${t.from.human ?? t.from.name} quiere abrir un tunel sobre "${t.subject}", y hay varias sesiones tuyas abiertas.
 Si esto es para esta sesion, preguntale a tu humano y ejecuta:  spochie take ${t.id}`);
+    avisadas.add(s.sessionId);
   }
-  if (ambiguas.length) log("assign", t.id, "ambiguo entre", ambiguas.length);
+  if (nuevas.length) { t.avisoTake = [...avisadas]; T.save(t); }
+  if (ambiguas.length) log("assign", t.id, "ambiguo entre", ambiguas.length, nuevas.length ? `avisadas ${nuevas.length}` : "ya avisadas");
   return null;
 }
 

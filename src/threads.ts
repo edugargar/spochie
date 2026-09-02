@@ -51,6 +51,8 @@ export type Thread = {
   context: { branch?: string; sha?: string; files?: string[] };
   /** URL del Artifact con el transcript, publicado por quien abre el spochie. */
   transcriptUrl?: string;
+  /** Sesiones a las que ya se les dijo "hay varias, haz take". Una vez cada una. */
+  avisoTake?: string[];
   /** Que sesion lo publico. Un Artifact pertenece a una cuenta y solo su dueno lo
    *  republica, asi que hay que saber a quien pedirselo. */
   transcriptOwner?: string;

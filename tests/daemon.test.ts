@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { register } from "../src/registry.ts";
 import * as Cfg from "../src/config.ts";
+import * as T from "../src/threads.ts";
 import { DAEMON_SOCK } from "../src/paths.ts";
 
 /** Un buzon falso: hace de sesion de Claude y apunta lo que le entregan. */
@@ -172,3 +173,25 @@ test("un mensaje vacio no sale", async () => {
   expect(B.got.length).toBe(antes);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
 }, 20_000);
+
+test("con varias sesiones y ninguna que encaje, el aviso de take llega una vez por sesion", async () => {
+  // Un spochie llegado por Slack, sin lado local, con una rama que ninguna sesion tiene.
+  const t: T.Thread = {
+    id: "amb1", subject: "ambiguo", state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
+    from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(otra maquina)", human: "Ana", slackUser: "U_ANA" },
+    to: { sessionId: "slack:U_ME", name: "yo", cwd: "(esta maquina)", slackUser: "U_ME" },
+    context: { branch: "feat/no-existe-en-ningun-checkout" }, messages: [],
+  };
+  T.save(t);
+  const cuenta = (box: { got: string[] }) => box.got.filter(x => x.includes("spochie take amb1")).length;
+  const a0 = cuenta(A), b0 = cuenta(B);
+  // claim recorre todos los hilos y llama a assign: es lo que pasa con cada mensaje del hilo.
+  await rpc({ op: "claim", sessionId: "A" });
+  expect(await llega(A, x => x.includes("spochie take amb1"))).toBe(true);
+  expect(await llega(B, x => x.includes("spochie take amb1"))).toBe(true);
+  await rpc({ op: "claim", sessionId: "A" });
+  await rpc({ op: "claim", sessionId: "B" });
+  await sleep(300);
+  expect(cuenta(A)).toBe(a0 + 1);
+  expect(cuenta(B)).toBe(b0 + 1);
+});
