@@ -80,6 +80,16 @@ export function launchdInstalado(): boolean {
 /** Deja el demonio bajo launchd. Idempotente: si el plist ya dice lo mismo, no toca
  *  nada. Si cambia (el plugin se actualizo y la ruta es otra), lo recarga. Con
  *  SPOCHIE_HOME puesto no se instala nada: eso es un laboratorio, no tu maquina. */
+/** La version del plugin que hay en una ruta de la cache (.../spochie/0.5.1/...). */
+export function versionDeRuta(texto: string): string | null {
+  return /\/spochie\/(\d+\.\d+\.\d+)\//.exec(texto)?.[1] ?? null;
+}
+export function masNueva(a: string, b: string): boolean {
+  const x = a.split(".").map(Number), y = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
 export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" {
   if (process.platform !== "darwin" || process.env.SPOCHIE_HOME) return "no";
   ensureDirs();
@@ -87,6 +97,11 @@ export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" 
   const p = plistPath();
   const habia = existsSync(p) ? readFileSync(p, "utf8") : null;
   if (habia === deseado) return "igual";
+  // Una sesion con el plugin viejo no degrada el demonio: visto en directo, un hook
+  // de 0.5.1 devolvio launchd a 0.5.1 a los 80 s de haberlo subido, en mitad de una
+  // prueba. Solo se sustituye por una version igual o mas nueva.
+  const vieja = habia ? versionDeRuta(habia) : null, mia = versionDeRuta(deseado);
+  if (vieja && mia && masNueva(vieja, mia)) return "no";
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, deseado, { mode: 0o644 });
   // Un demonio que arranco un hook sigue con el candado puesto; launchd arrancaria
