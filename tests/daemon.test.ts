@@ -143,6 +143,7 @@ test("varios mensajes seguidos del mismo lado salen como uno", async () => {
   // de trozos en Slack. Lo que se comprueba aqui es que no se pierde ninguno.
   await rpc({ op: "say", sessionId: "A", id: open.id, text: "[1] primera parte" });
   await rpc({ op: "say", sessionId: "A", id: open.id, text: "[2] segunda parte" });
+  expect(await llega(B, x => x.includes("[2] segunda parte"))).toBe(true);
   expect(B.got.length).toBe(antes + 2);
   expect(await llega(B, x => x.includes("segunda parte"))).toBe(true);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });

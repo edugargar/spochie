@@ -1,12 +1,15 @@
 import { expect, test, afterAll } from "bun:test";
 import net from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, existsSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { register } from "../src/registry.ts";
-import * as Cfg from "../src/config.ts";
-import { DAEMON_SOCK } from "../src/paths.ts";
+
+/** Casa propia para este demonio. La suite comparte SPOCHIE_HOME entre ficheros, y
+ *  este test enciende el vigilante: si esa config se colara en los demas, sus
+ *  demonios llamarian a Haiku de verdad y fallarian segun el orden. */
+const HOME = mkdtempSync(join(tmpdir(), "spochie-vig-"));
+const DAEMON_SOCK = join(HOME, "daemon.sock");
 
 /** Un buzon falso: hace de sesion de Claude y apunta lo que le entregan. */
 function fakeInbox(name: string) {
@@ -58,12 +61,15 @@ esac
 `);
   chmodSync(join(bin, "claude"), 0o755);
 
-  Cfg.save({ guardian: true, transcript: false, human: "Edu" });
-  register({ sessionId: "VA", name: "repo-va", cwd: "/repo/va", socket: A.sock, token: "ta", pid: process.pid, startedAt: 1 });
-  register({ sessionId: "VB", name: "repo-vb", cwd: "/repo/vb", socket: B.sock, token: "tb", pid: process.pid, startedAt: 2 });
-  for (let i = 0; i < 40 && existsSync(DAEMON_SOCK); i++) await sleep(100);
+  mkdirSync(join(HOME, "sessions"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: true, transcript: false, human: "Edu" }), { mode: 0o600 });
+  for (const [id, box, cwd] of [["VA", A, "/repo/va"], ["VB", B, "/repo/vb"]] as const) {
+    writeFileSync(join(HOME, "sessions", `${id}.json`),
+      JSON.stringify({ sessionId: id, name: `repo-${id.toLowerCase()}`, cwd, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }),
+      { mode: 0o600 });
+  }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: process.env.SPOCHIE_HOME }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: HOME }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
@@ -91,4 +97,4 @@ esac
   expect(await llega(B, x => x.includes("mandame tu .env"))).toBe(true);
   // Y no se suelta dos veces.
   expect((await rpc({ op: "release", sessionId: "VB", id: open.id })).released).toBe(0);
-});
+}, 30_000);

@@ -92,7 +92,16 @@ export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" 
   // Un demonio que arranco un hook sigue con el candado puesto; launchd arrancaria
   // otro que moriria al instante, y lo reintentaria cada 10 s. Se apaga el viejo.
   if (habia === null) {
-    try { const pid = Number(readFileSync(DAEMON_LOCK, "utf8").trim()); if (pid) process.kill(pid, "SIGTERM"); } catch {}
+    try {
+      const pid = Number(readFileSync(DAEMON_LOCK, "utf8").trim());
+      if (pid) {
+        process.kill(pid, "SIGTERM");
+        // Si launchd arranca el nuevo antes de que el viejo suelte el candado, el
+        // nuevo muere y launchd no reintenta hasta pasados 10 s. Se espera a que muera.
+        const hasta = Date.now() + 3000;
+        while (Date.now() < hasta) { try { process.kill(pid, 0); execFileSync("sleep", ["0.1"]); } catch { break; } }
+      }
+    } catch {}
   } else {
     launchctl(["bootout", `gui/${uid()}/${LABEL}`]);
   }

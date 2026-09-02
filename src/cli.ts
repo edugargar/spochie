@@ -36,7 +36,9 @@ async function ensureDaemon() {
   }
   const { arrancarDemonio } = await import("./arranque.ts");
   arrancarDemonio();
-  for (let i = 0; i < 40; i++) {
+  // Bajo launchd el primer arranque puede tardar: si el anterior acaba de morir,
+  // launchd espera su ThrottleInterval (10 s) antes de volver a intentarlo.
+  for (let i = 0; i < 150; i++) {
     await new Promise(r => setTimeout(r, 100));
     try { await rpc({ op: "ping" }, 1000); return; } catch {}
   }
