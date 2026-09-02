@@ -1,0 +1,111 @@
+/**
+ * Un repaso de todo lo que tiene que estar bien para que un spochie llegue.
+ *
+ * Existe porque los fallos de esta herramienta son silenciosos por naturaleza: un token
+ * caducado, un fichero con permisos flojos o un demonio muerto no dan error, solo hacen
+ * que el mensaje no llegue y que nadie se entere.
+ */
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { ROOT, SESSIONS_DIR, THREADS_DIR, DAEMON_SOCK, DAEMON_LOCK } from "./paths.ts";
+import { liveSessions, permisosFlojos } from "./registry.ts";
+import * as Cfg from "./config.ts";
+import * as T from "./threads.ts";
+import { whoIs } from "./slack.ts";
+
+export type Chequeo = { ok: boolean | "aviso"; que: string; detalle: string };
+
+const modo = (p: string) => { try { return (statSync(p).mode & 0o777).toString(8).padStart(3, "0"); } catch { return "?"; } };
+
+export async function revisar(): Promise<Chequeo[]> {
+  const out: Chequeo[] = [];
+  const c = Cfg.load();
+
+  out.push({
+    ok: existsSync(DAEMON_SOCK) && existsSync(DAEMON_LOCK),
+    que: "demonio",
+    detalle: existsSync(DAEMON_LOCK) ? `vivo, pid ${(await Bun.file(DAEMON_LOCK).text()).trim()}` : "no esta corriendo",
+  });
+
+  const dirModo = modo(ROOT);
+  out.push({
+    ok: dirModo === "700",
+    que: "permisos del directorio",
+    detalle: `${ROOT} esta en ${dirModo}${dirModo === "700" ? "" : ", deberia ser 700"}`,
+  });
+
+  const flojos = existsSync(SESSIONS_DIR)
+    ? readdirSync(SESSIONS_DIR).filter(f => f.endsWith(".json") && permisosFlojos(join(SESSIONS_DIR, f)))
+    : [];
+  out.push({
+    ok: flojos.length === 0,
+    que: "tokens de buzon en reposo",
+    detalle: flojos.length
+      ? `${flojos.length} con permisos abiertos: ${flojos.join(", ")}. chmod 600.`
+      : "cada sesion registrada guarda su token con 0600, solo para ti",
+  });
+
+  const vivas = liveSessions();
+  out.push({ ok: vivas.length > 0, que: "sesiones registradas", detalle: vivas.length ? vivas.map(s => s.name).join(", ") : "ninguna: falta el hook SessionStart, o reiniciar la sesion" });
+
+  const socketsRotos = vivas.filter(s => !existsSync(s.socket));
+  if (socketsRotos.length) out.push({ ok: false, que: "buzones", detalle: `${socketsRotos.length} sesiones sin socket` });
+
+  if (!c.slack) {
+    out.push({ ok: "aviso", que: "Slack", detalle: "sin configurar: spochie solo funciona en esta maquina" });
+  } else {
+    const user = Cfg.slackToken(c), bot = Cfg.slackBotToken(c);
+    const yo = user ? await whoIs(user) : null;
+    const elBot = bot ? await whoIs(bot) : null;
+    // El de usuario es opcional desde que el bot puede buscar personas: solo se
+    // queja si esta puesto y no vale, no por faltar.
+    if (user) out.push({ ok: Boolean(yo), que: "token de usuario", detalle: yo ? `${yo.user} en ${yo.team}` : "esta puesto y no vale" });
+    out.push({ ok: Boolean(elBot), que: "token de bot", detalle: elBot ? `${elBot.user}` : "no vale o falta" });
+    if (elBot && !user) {
+      // Sin token de usuario, buscar personas depende de que la app tenga users:read
+      // de bot. Si no lo tiene, abrir un spochie por nombre o email falla en el unico
+      // sitio donde duele: al escribirle a alguien por primera vez.
+      const r = await fetch("https://slack.com/api/users.list?limit=1", { headers: { authorization: `Bearer ${bot}` } }).then(x => x.json()).catch(() => ({ ok: false }));
+      out.push({
+        ok: r.ok === true, que: "buscar personas",
+        detalle: r.ok ? "el bot puede, no hace falta token de usuario"
+                      : "la app necesita users:read y users:read.email como scopes de BOT",
+      });
+    }
+    if (c.slack.tokenFile) {
+      out.push({
+        ok: !permisosFlojos(c.slack.tokenFile),
+        que: "fichero de tokens",
+        detalle: `${c.slack.tokenFile} en ${modo(c.slack.tokenFile)}`,
+      });
+    }
+  }
+
+  const abiertos = T.all().filter(t => t.state !== "closed");
+  out.push({
+    ok: true,
+    que: "spochies",
+    detalle: `${abiertos.length} vivos, ${T.all().length} en total en esta maquina`,
+  });
+
+  out.push({
+    ok: c.guardian ? "aviso" : true,
+    que: "vigilante de tema",
+    detalle: c.guardian
+      ? "encendido: cuesta una llamada a Haiku por mensaje recibido, la paga quien recibe"
+      : "apagado",
+  });
+
+  out.push({
+    ok: true,
+    que: "transcript",
+    detalle: c.transcript ? "encendido: se pide republicar en cada turno a quien abrio" : "apagado",
+  });
+
+  if (existsSync(THREADS_DIR)) {
+    const viejos = T.all().filter(t => t.state === "closed" && Date.now() - (t.closedAt ?? 0) > 30 * 24 * 3600 * 1000);
+    if (viejos.length) out.push({ ok: "aviso", que: "limpieza", detalle: `${viejos.length} spochies cerrados hace mas de un mes` });
+  }
+
+  return out;
+}

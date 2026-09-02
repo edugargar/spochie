@@ -1,0 +1,19 @@
+{
+  "name": "edugargar",
+  "owner": {
+    "name": "Eduardo Garcia"
+  },
+  "plugins": [
+    {
+      "name": "spochie",
+      "source": "./",
+      "description": "Tunel entre la sesion de Claude de una persona y la de otra, con Slack de notificacion e hilo.",
+      "version": "0.3.0",
+      "keywords": [
+        "slack",
+        "colaboracion",
+        "agentes"
+      ]
+    }
+  ]
+}

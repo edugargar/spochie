@@ -1,0 +1,14 @@
+{
+  "name": "spochie",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Tunel entre la sesion de Claude de una persona y la de otra",
+  "type": "module",
+  "bin": { "spochie": "./src/cli.ts" },
+  "scripts": {
+    "test": "bun test",
+    "daemon": "bun run src/daemon.ts",
+    "spochie": "bun run src/cli.ts"
+  },
+  "devDependencies": { "@types/node": "^22" }
+}

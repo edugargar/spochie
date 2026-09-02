@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Opcional. Sin esto el demonio lo arranca el primer hook SessionStart, que
+     basta para el uso normal: si no hay ninguna sesion, no hay nada que entregar.
+     Cambia /RUTA/A/spochie por tu clon. Instalar con: cp a ~/Library/LaunchAgents/ y launchctl load -w. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.spochie.spochied</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/bun</string>
+    <string>run</string>
+    <string>/RUTA/A/spochie/src/daemon.ts</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/spochied.err</string>
+</dict></plist>

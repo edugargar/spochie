@@ -1,0 +1,600 @@
+/**
+ * Puente de Slack. Es a la vez transporte entre maquinas, direccion y fuente de
+ * verdad del estado: el hilo tiene quien abrio, quien acepto y las marcas de tiempo,
+ * y un estado local se desincroniza en cuanto alguien cierra el portatil.
+ *
+ * NO usa Socket Mode. Con varias conexiones de la misma app, Slack entrega cada
+ * evento a UNA sola, asi que un spochie para Alex se lo podria quedar el demonio de
+ * Edu.
+ *
+ * Y NO recorre tus DMs buscando spochies. Esa fue la primera version y se cayo a la
+ * primera contra una cuenta real: 197 DMs por tick, `conversations.history` es Tier 3,
+ * y Slack devolvia `ratelimited` en el segundo canal. Tampoco usa `search.messages`,
+ * que resolveria el problema en una llamada pero exige el scope `search:read`.
+ *
+ * En su lugar todo el trafico vive en el DM entre el BOT y cada persona. Ese DM es el
+ * mismo canal visto desde los dos lados (verificado: D0XXXXXXXXX desde el bot y desde
+ * el usuario), asi que cada demonio consulta exactamente UN canal para lo que le llega,
+ * mas un hilo por spochie abierto. Postea y lee el bot; el token de usuario solo se usa
+ * para buscar personas, que es lo unico que el bot no puede hacer.
+ */
+import * as Cfg from "./config.ts";
+import * as T from "./threads.ts";
+import { subir, bajar } from "./files.ts";
+
+const API = "https://slack.com/api/";
+/** Cabecera legible por maquina que va en el primer mensaje del hilo. Es lo que
+ *  permite al demonio del otro lado reconocer un spochie entre sus DMs. */
+/** El sobre de maquina va en `metadata` de Slack, no en el texto.
+ *  Antes iba como un bloque `spochie:v1 {...}` visible al final del mensaje: feo para
+ *  quien lee, y editable por cualquiera. `metadata` vuelve intacto en history y en
+ *  replies (verificado) y no se ve. */
+export const EVENT = "spochie";
+
+export type Envelope = {
+  v: 1;
+  id: string;
+  kind: "invite" | "msg" | "notice" | "accept";
+  /** Quien habla, por su id de Slack. Sin esto un demonio no distingue lo que postea
+   *  el de enfrente de lo que ha posteado el mismo: los dos postean como el bot. */
+  from: string;
+  subject?: string;
+  fromName?: string;
+  kindOfMsg?: T.MsgKind;
+  context?: unknown;
+};
+
+/** Slack corta cada bloque a 3000 caracteres. Trocear por lineas en vez de rebanar,
+ *  que es lo que dejaba un mensaje terminado en "p" a mitad de palabra. */
+export function chunk(text: string, size = 2800, max = 12): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const line of text.split("\n")) {
+    for (const piece of line.length > size ? (line.match(new RegExp(`.{1,${size}}`, "g")) ?? []) : [line]) {
+      if ((cur + "\n" + piece).length > size) { if (cur) out.push(cur); cur = piece; }
+      else cur = cur ? cur + "\n" + piece : piece;
+    }
+  }
+  if (cur) out.push(cur);
+  return out.length > max ? [...out.slice(0, max - 1), "_(sigue en el transcript)_"] : out;
+}
+
+export function envelopeOf(msg: any): Envelope | null {
+  const p = msg?.metadata?.event_payload;
+  return msg?.metadata?.event_type === EVENT && p?.id && p?.from ? (p as Envelope) : null;
+}
+
+/** Un aviso del sistema, en una linea y en cristiano. */
+export function noticeText(t: T.Thread, rendered: string): string {
+  const who = (s: T.Side) => s.human ?? s.name;
+  if (rendered.includes("ha aceptado el tunel")) {
+    const quien = t.acceptedBy ?? who(t.to);
+    return `:white_check_mark: ${quien} ha aceptado. El tunel esta abierto y muere solo tras 10 min de silencio.`;
+  }
+  if (rendered.includes("cerrado (")) {
+    return `:lock: Spochie cerrado${t.closeReason ? `: ${t.closeReason}` : ""}.`;
+  }
+  // Cualquier otra cosa: fuera las lineas de instrucciones internas.
+  return rendered.split("\n").filter(l => !l.startsWith("spochie ") && !l.includes("--- Esto viene")).join("\n").trim();
+}
+
+type Block = Record<string, unknown>;
+
+const sec = (text: string): Block => ({ type: "section", text: { type: "mrkdwn", text } });
+/** Un bloque de contenido: lo que ve la persona Y lo que lee el Claude del otro lado.
+ *
+ *  El texto integro NO viaja en el sobre de metadata. Se probó y Slack acepta el
+ *  mensaje pero se traga el sobre entero, sin error, en cuanto un valor pasa de unos
+ *  3.000 caracteres. Un canal que pierde datos en silencio por encima de un umbral
+ *  difuso no vale. Los bloques vuelven siempre, y ademas no hay dos copias del mismo
+ *  texto que puedan discrepar. */
+const BODY = "sp-body";
+let bodySeq = 0;
+const body = (text: string): Block => ({ type: "section", block_id: `${BODY}-${bodySeq++}-${Date.now() % 100000}`, text: { type: "mrkdwn", text } });
+
+/** Rehace el mensaje a partir de los bloques marcados. */
+export function bodyFromBlocks(blocks: any[] | undefined): string {
+  return (blocks ?? [])
+    .filter(b => typeof b?.block_id === "string" && b.block_id.startsWith(BODY))
+    .map(b => String(b?.text?.text ?? ""))
+    .join("\n")
+    .replace(/^```\n?|\n?```$/g, "")
+    // Slack auto-enlaza dentro del texto: <http://api.post|api.post> vuelve como tal,
+    // y el otro Claude se encontraba URLs donde su companero escribio codigo.
+    .replace(/<(?:https?:\/\/)?[^|>]*\|([^>]*)>/g, "$1")
+    .replace(/<((?:https?|mailto):[^>]*)>/g, "$1")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    .trim();
+}
+const ctx = (text: string): Block => ({ type: "context", elements: [{ type: "mrkdwn", text }] });
+
+const sideOf = (t: T.Thread, m: T.Msg) => (m.from === t.from.sessionId ? t.from : t.to);
+const nameOf = (s: T.Side) => s.human ?? s.name;
+
+function contextLine(t: T.Thread): string | null {
+  const c = t.context;
+  const bits = [
+    c.branch ? `\`${c.branch}\`` : null,
+    c.sha ? `\`${c.sha.slice(0, 7)}\`` : null,
+    c.files?.length ? c.files.map(f => `\`${f}\``).join("  ") : null,
+  ].filter(Boolean);
+  return bits.length ? bits.join("  ·  ") : null;
+}
+
+/** La apertura, tal y como la ve la persona. El sobre de maquina va aparte. */
+export function inviteBlocks(t: T.Thread): Block[] {
+  const c = contextLine(t);
+  const blocks: Block[] = [
+    { type: "header", text: { type: "plain_text", text: `Spochie de ${nameOf(t.from)}`.slice(0, 150), emoji: true } },
+    sec(`*${t.subject}*`),
+  ];
+  if (c) blocks.push(ctx(c));
+  for (const c of chunk(t.messages[0]?.text ?? "")) blocks.push(body(c));
+  blocks.push({ type: "divider" });
+  blocks.push(sec(`<@${t.to.slackUser}> contesta en este hilo para aceptarlo, o dile a tu Claude:\n\`spochie accept ${t.id}\``));
+  blocks.push(ctx("Caduca sin aceptar en 4 h  ·  una vez abierto, muere tras 10 min de silencio"));
+  return blocks;
+}
+
+/** Un turno. El autor va arriba en pequeno, el contenido debajo. */
+export function messageBlocks(t: T.Thread, m: T.Msg): Block[] {
+  const who = nameOf(sideOf(t, m));
+  const head = m.author === "human" ? `*${who}* · escribe en persona` : `*${who}* · su Claude`;
+  const blocks: Block[] = [ctx(head)];
+
+  if (m.kind === "patch") {
+    blocks.push(sec("Parche propuesto. Aplícalo tú si te convence, nadie escribe en tu máquina."));
+    for (const c of chunk(m.text, 2700, Math.ceil(T.MAX_PARCHE / 2700))) blocks.push(body("```\n" + c + "\n```"));
+  } else if (m.kind === "branch") {
+    blocks.push(body(`Rama para revisar: \`${m.text}\``));
+  } else {
+    for (const c of chunk(m.text)) blocks.push(body(c));
+  }
+
+  if (m.files?.length) blocks.push(ctx(m.files.map(f => `\`${f}\``).join("  ")));
+  if (m.offTopic && m.offTopic.verdict !== "dentro") {
+    blocks.push(ctx(`:warning: el vigilante lo ve *${m.offTopic.verdict}* del asunto: ${m.offTopic.why}`));
+  }
+  return blocks;
+}
+
+/** Un aviso del sistema: una línea pequeña, nunca el texto interno que va al Claude. */
+export function noticeBlocks(t: T.Thread, rendered: string): { blocks: Block[]; text: string } {
+  let text: string;
+  if (rendered.includes("ha aceptado el tunel")) {
+    text = `:white_check_mark: *${t.acceptedBy ?? nameOf(t.to)}* ha aceptado. El túnel está abierto.`;
+  } else if (rendered.includes("cerrado (")) {
+    text = `:lock: Cerrado${t.closeReason ? ` · ${t.closeReason}` : ""}`;
+  } else {
+    text = rendered.split("\n").filter(l => !l.startsWith("spochie ") && !l.includes("--- Esto viene")).join("\n").trim();
+  }
+  return { blocks: [ctx(text)], text };
+}
+
+/** Un acuse a secas: aceptar, vale, ok. No es un turno de conversacion. */
+const ACUSES = /^(acepto|aceptado|vale|ok|okey|oki|dale|si|sí|venga|adelante|perfecto|genial|gracias|👍|✅)[\s.!]*$/i;
+export const esAcuse = (t: string) => ACUSES.test(t.trim());
+
+/** Texto plano de respaldo: es lo que sale en la notificación del móvil. */
+export function fallbackText(t: T.Thread, m: T.Msg): string {
+  const who = nameOf(sideOf(t, m));
+  if (m.kind === "patch") return `${who} te manda un parche`;
+  if (m.kind === "branch") return `${who}: rama ${m.text}`;
+  return `${who}: ${m.text.slice(0, 180)}`;
+}
+
+/** auth.test devuelve quien eres con ese token. Asi el setup no te pide el user id. */
+export async function whoIs(token: string): Promise<{ userId: string; user: string; team: string } | null> {
+  try {
+    const res = await fetch(API + "auth.test", { headers: { authorization: `Bearer ${token}` } });
+    const j = await res.json();
+    return j.ok ? { userId: j.user_id, user: j.user, team: j.team } : null;
+  } catch { return null; }
+}
+
+export class SlackBridge {
+
+  private lastDiscovery = 0;
+
+  private botUserId: string | null = null;
+  private myDm: string | null = null;
+  /** Al arrancar se mira atras lo mismo que dura la cola de pendientes: un spochie
+   *  mas viejo que eso ya ha caducado, y uno de hace un minuto tiene que aparecer
+   *  aunque el demonio se haya levantado despues. */
+  private inboxCursor = String(Math.round((Date.now() - T.PENDING_TTL_MS) / 1000));
+  /** Cuando Slack dice basta, se para hasta esta marca. */
+  private backoffUntil = 0;
+  /** El aviso de "esta mirando" que hay puesto en cada hilo, para poder quitarlo. */
+  private pensando = new Map<string, { ts: string; desde: number }>();
+  /** Si el otro lado no contesta, el aviso de "esta mirando" se quita solo.
+   *  Un indicador eterno miente igual que un silencio. */
+  private static PENSANDO_MAX_MS = 4 * 60 * 1000;
+
+  private constructor(
+    /** Vacio si la app tiene users:read de bot. Solo sirve para buscar personas:
+     *  el trafico lo mueve siempre el bot. Sin el, uno menos que pedirle a nadie. */
+    private userToken: string,
+    private botToken: string,
+    private me: string,
+    private onMessage: OnMessage,
+    private onAccept: OnAccept,
+    private onRemoteAccept: OnRemoteAccept,
+  ) {}
+
+  static fromConfig(onMessage: OnMessage, onAccept: OnAccept, onRemoteAccept: OnRemoteAccept): SlackBridge | null {
+    const c = Cfg.load();
+    const user = Cfg.slackToken(c);
+    const bot = Cfg.slackBotToken(c);
+    // El token de usuario ya no hace falta: si la app tiene users:read de bot, el
+    // bot busca personas igual de bien. Lo que no se puede pedir a nadie es un token
+    // que solo se consigue instalando la app uno mismo.
+    if (!bot || !c.slack?.userId) return null;
+    return new SlackBridge(user ?? "", bot, c.slack.userId, onMessage, onAccept, onRemoteAccept);
+  }
+
+  /** Un 429 no se reintenta al momento: se respeta Retry-After y se para todo.
+   *  Insistir contra un rate limit es como te lo amplian. */
+  private noteLimit(res: Response) {
+    const wait = Number(res.headers.get("retry-after") ?? 30);
+    this.backoffUntil = Date.now() + (Number.isFinite(wait) ? wait : 30) * 1000;
+  }
+
+  private get frozen() { return Date.now() < this.backoffUntil; }
+
+  private async call(method: string, body: Record<string, unknown>, as: "bot" | "user" = "bot"): Promise<any> {
+    if (this.frozen) throw new Error("slack en espera por rate limit");
+    const res = await fetch(API + method, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        authorization: `Bearer ${as === "bot" ? this.botToken : this.userToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 429) { this.noteLimit(res); throw new Error(`slack ${method}: ratelimited`); }
+    const json = await res.json();
+    if (!json.ok) {
+      if (json.error === "ratelimited") this.backoffUntil = Date.now() + 30_000;
+      throw new Error(`slack ${method}: ${json.error}`);
+    }
+    return json;
+  }
+
+  private async get(method: string, params: Record<string, string>, as: "bot" | "user" = "bot"): Promise<any> {
+    if (this.frozen) throw new Error("slack en espera por rate limit");
+    const res = await fetch(`${API}${method}?${new URLSearchParams(params)}`, {
+      headers: { authorization: `Bearer ${as === "bot" ? this.botToken : this.userToken}` },
+    });
+    if (res.status === 429) { this.noteLimit(res); throw new Error(`slack ${method}: ratelimited`); }
+    const json = await res.json();
+    if (!json.ok) {
+      if (json.error === "ratelimited") this.backoffUntil = Date.now() + 30_000;
+      throw new Error(`slack ${method}: ${json.error}`);
+    }
+    return json;
+  }
+
+  /** El DM entre el bot y yo: el unico canal que hay que mirar para lo que me llega. */
+  private async inbox(): Promise<string | null> {
+    if (this.myDm) return this.myDm;
+    try {
+      if (!this.botUserId) this.botUserId = (await this.get("auth.test", {})).user_id;
+      const im = await this.call("conversations.open", { users: this.me });
+      this.myDm = im.channel.id;
+      return this.myDm;
+    } catch { return null; }
+  }
+
+  /** Quien pregunta por las personas. El bot si la app tiene users:read; si no, el
+   *  token de usuario de quien lo tenga. Buscar es lo unico que necesita esto. */
+  private quienBusca(): "bot" | "user" { return this.userToken ? "user" : "bot"; }
+
+  async lookupUser(needle: string): Promise<SlackUser | null> {
+    // Un id de Slack se acepta tal cual: es lo unico que no puede ser ambiguo.
+    if (/^[UWB][A-Z0-9]{6,}$/.test(needle)) {
+      try {
+        const r = await this.get("users.info", { user: needle }, this.quienBusca());
+        return { id: needle, name: r.user?.profile?.real_name ?? r.user?.name ?? needle };
+      } catch { return { id: needle, name: needle }; }
+    }
+    if (needle.includes("@")) {
+      try {
+        const r = await this.get("users.lookupByEmail", { email: needle }, this.quienBusca());
+        return { id: r.user.id, name: r.user.profile?.real_name ?? r.user.name };
+      } catch { return null; }
+    }
+    const r = await this.get("users.list", { limit: "500" }, this.quienBusca());
+    const n = needle.toLowerCase();
+    const hit = (r.members ?? []).find((u: any) =>
+      !u.deleted && !u.is_bot &&
+      [u.name, u.profile?.display_name, u.profile?.real_name].filter(Boolean)
+        .some((x: string) => x.toLowerCase() === n || x.toLowerCase().replace(/\s+/g, "") === n));
+    return hit ? { id: hit.id, name: hit.profile?.real_name ?? hit.name } : null;
+  }
+
+  async openThread(t: T.Thread): Promise<{ channel: string; ts: string } | null> {
+    // El DM entre el bot y quien recibe: el mismo canal que esa persona consultara.
+    const im = await this.call("conversations.open", { users: t.to.slackUser });
+    const channel: string = im.channel.id;
+    const env: Envelope = {
+      v: 1, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
+      subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
+    };
+    const post = await this.call("chat.postMessage", {
+      channel,
+      text: `Spochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
+      blocks: inviteBlocks(t),
+      metadata: { event_type: EVENT, event_payload: env },
+      unfurl_links: false,
+    });
+    // Los ficheros del primer mensaje se suben al hilo recien creado. Antes solo los
+    // subia post(), asi que una captura adjunta al abrir se quedaba en la maquina.
+    for (const f of t.messages[0]?.files ?? []) {
+      await subir(this.botToken, f, channel, post.ts);
+    }
+    return { channel, ts: post.ts };
+  }
+
+  async post(t: T.Thread, notice: string, m?: T.Msg): Promise<boolean> {
+    if (!t.slack) return false;
+    await this.pensandoOff(t);
+    const mine = t.from.slackUser === this.me ? t.from : t.to;
+    const env: Envelope = {
+      v: 1, id: t.id,
+      kind: m ? "msg" : (notice.includes("ha aceptado el tunel") ? "accept" : "notice"),
+      from: mine.slackUser ?? this.me,
+      ...(m ? { kindOfMsg: m.kind } : {}),
+    };
+    const body = m
+      ? { text: fallbackText(t, m), blocks: messageBlocks(t, m) }
+      : noticeBlocks(t, notice);
+    // Los ficheros van al hilo antes que el texto, para que se lean juntos.
+    if (m?.files?.length) {
+      for (const f of m.files) await subir(this.botToken, f, t.slack.channel, t.slack.ts);
+    }
+    try {
+      await this.call("chat.postMessage", {
+        channel: t.slack.channel, thread_ts: t.slack.ts,
+        ...body,
+        metadata: { event_type: EVENT, event_payload: env },
+        unfurl_links: false,
+      });
+      return true;
+    } catch { return false; }
+  }
+
+  /**
+   * Un aviso de que el otro lado esta trabajando. Sin esto hay 30 o 40 segundos de
+   * pantalla en blanco en los que nadie sabe si el tunel se ha muerto.
+   * Se pone al entregar un turno y se quita en cuanto llega la respuesta.
+   */
+  async pensandoOn(t: T.Thread, quien: string) {
+    if (!t.slack || this.pensando.has(t.id)) return;
+    try {
+      const r = await this.call("chat.postMessage", {
+        channel: t.slack.channel, thread_ts: t.slack.ts,
+        text: `${quien} está mirando su código…`,
+        blocks: [ctx(`:hourglass_flowing_sand: _${quien} está mirando su código…_`)],
+        // Sin sobre, el demonio del otro lado se lo tragaba como si fuera una persona
+        // escribiendo, y su Claude recibia "Alex esta mirando su codigo" como un turno.
+        metadata: { event_type: EVENT, event_payload: { v: 1, id: t.id, kind: "notice", from: this.me } },
+      });
+      this.pensando.set(t.id, { ts: r.ts, desde: Date.now() });
+    } catch {}
+  }
+
+  async pensandoOff(t: T.Thread) {
+    const p = this.pensando.get(t.id);
+    if (!p || !t.slack) return;
+    this.pensando.delete(t.id);
+    try { await this.call("chat.delete", { channel: t.slack.channel, ts: p.ts }); } catch {}
+  }
+
+  /** Barre los indicadores que llevan demasiado puestos. */
+  private async barrerPensando() {
+    for (const [id, p] of [...this.pensando]) {
+      if (Date.now() - p.desde < SlackBridge.PENSANDO_MAX_MS) continue;
+      const t = T.load(id);
+      this.pensando.delete(id);
+      if (t?.slack) { try { await this.call("chat.delete", { channel: t.slack.channel, ts: p.ts }); } catch {} }
+    }
+  }
+
+  /**
+   * Presupuesto de llamadas.
+   *
+   * `conversations.replies` y `conversations.history` son Tier 3: del orden de 50 por
+   * minuto y por metodo, contadas **por app**, no por persona. Como todo el equipo
+   * comparte la misma app, el gasto de los quince se suma en el mismo cubo. Mi primer
+   * intento (6 hilos cada 4s) daban 105 llamadas por minuto y por demonio: por catorce
+   * personas, ni de lejos.
+   *
+   * La cuenta que si sale, para un equipo de 15 con dos conversaciones vivas a la vez:
+   *
+   *   descubrimiento en reposo   13 demonios x 1/min  = 13/min de history
+   *   descubrimiento activo       2 demonios x 4/min  =  8/min de history
+   *   hilos vivos                 2 demonios x 12/min = 24/min de replies
+   *
+   * Unas 21 de history y 24 de replies por minuto, con el limite en 50 de cada uno.
+   * Queda holgura para que alguien abra un tercer spochie sin tirar a nadie.
+   */
+  private static TOPE_HILOS = 4;
+  private static RECIENTE_MS = 2 * 60 * 1000;
+  /** Cada cuanto se mira el buzon: rapido si hay conversacion, lento si no hay nada. */
+  private static DESCUBRIR_ACTIVO_MS = 15_000;
+  private static DESCUBRIR_REPOSO_MS = 60_000;
+  private rueda = 0;
+  private ultimaMirada = new Map<string, number>();
+  private ultimoDescubrir = 0;
+
+  /** Lo que gasta este demonio ahora mismo, para poder decirlo en `spochie doctor`. */
+  presupuesto(): { hilos: number; historyPorMin: number; repliesPorMin: number } {
+    const vivos = T.all().filter(t => t.state !== "closed" && t.slack).length;
+    const cadencia = vivos ? SlackBridge.DESCUBRIR_ACTIVO_MS : SlackBridge.DESCUBRIR_REPOSO_MS;
+    return {
+      hilos: vivos,
+      historyPorMin: Math.round(60_000 / cadencia),
+      repliesPorMin: Math.min(vivos, SlackBridge.TOPE_HILOS) * 12,
+    };
+  }
+
+  async poll(): Promise<void> {
+    if (this.frozen) return;
+    const ahora = Date.now();
+    const abiertos = T.all().filter(t => t.state !== "closed" && t.slack);
+
+    // Solo corre detras del hilo que se ha movido hace poco. Uno abierto pero parado
+    // entra por turnos, para que ninguno se quede sin mirar y ninguno acapare.
+    const recientes = abiertos.filter(t => ahora - t.lastActivityAt < SlackBridge.RECIENTE_MS);
+    const parados = abiertos.filter(t => ahora - t.lastActivityAt >= SlackBridge.RECIENTE_MS);
+    const cola = [...recientes];
+    for (let i = 0; i < parados.length && cola.length < SlackBridge.TOPE_HILOS; i++) {
+      cola.push(parados[(this.rueda + i) % parados.length]);
+    }
+    this.rueda = (this.rueda + 1) % Math.max(parados.length, 1);
+
+    for (const t of cola.slice(0, SlackBridge.TOPE_HILOS)) {
+      this.ultimaMirada.set(t.id, ahora);
+      await this.pollThread(t);
+      if (this.frozen) return;
+    }
+
+    // El buzon no hace falta mirarlo al ritmo de la conversacion: un spochie que llega
+    // puede esperar quince segundos, y en reposo un minuto. Esto es lo que evita que
+    // quince demonios sin nada que hacer se coman el cubo de llamadas del equipo.
+    const cadencia = abiertos.length ? SlackBridge.DESCUBRIR_ACTIVO_MS : SlackBridge.DESCUBRIR_REPOSO_MS;
+    if (ahora - this.ultimoDescubrir >= cadencia) {
+      this.ultimoDescubrir = ahora;
+      await this.discover();
+    }
+    await this.barrerPensando();
+  }
+
+  private async pollThread(t: T.Thread) {
+    const oldest = t.slackCursor ?? t.slack!.ts;
+    let r: any;
+    try {
+      r = await this.get("conversations.replies", {
+        channel: t.slack!.channel, ts: t.slack!.ts, oldest, limit: "50", include_all_metadata: "true",
+      });
+    } catch { return; }
+
+    for (const rep of (r.messages ?? []) as Reply[]) {
+      if (rep.ts === t.slack!.ts || rep.ts <= oldest) continue;
+      // El cursor se guarda antes de entregar: si algo peta a mitad, se pierde un
+      // mensaje, que es mejor que reinyectar el hilo entero en bucle.
+      const vivo = T.load(t.id);
+      if (vivo) { vivo.slackCursor = rep.ts; T.save(vivo); t.slackCursor = rep.ts; }
+
+      // Ficheros compartidos en el hilo: se bajan al spool y se anuncian con su ruta
+      // local, que es lo unico que el Claude de esta maquina puede abrir.
+      const suyos = (rep as any).files as any[] | undefined;
+      if (suyos?.length && rep.user !== this.me) {
+        const rutas = await bajar(this.botToken, suyos, t.id);
+        if (rutas.length) {
+          await this.onMessage(t, {
+            at: Math.round(Number(rep.ts) * 1000),
+            from: T.otherSide(t, this.localSideId(t)).sessionId,
+            author: "claude", kind: "text",
+            text: `Te dejo ${rutas.length === 1 ? "un fichero" : `${rutas.length} ficheros`} en el hilo. Ya estan bajados en esta maquina, abrelos si quieres.`,
+            files: rutas,
+          });
+        }
+      }
+      if (rep.subtype === "file_share" && !(rep.text ?? "").trim()) continue;
+      if (rep.subtype && rep.subtype !== "file_share") continue;
+
+      const env = envelopeOf(rep);
+      if (env) {
+        // Lo postea spochie. Los dos lados postean como el bot, asi que quien habla
+        // solo se sabe por el sobre. Sin esto un demonio se salta al otro.
+        if (env.from === this.me) continue;
+        if (env.kind === "accept") { await this.onRemoteAccept(t, "en la otra maquina"); continue; }
+        if (env.kind === "notice" || env.kind === "invite") continue;
+        await this.onMessage(t, {
+          at: Math.round(Number(rep.ts) * 1000),
+          from: T.otherSide(t, this.localSideId(t)).sessionId,
+          author: "claude",
+          kind: env.kindOfMsg ?? "text",
+          text: bodyFromBlocks((rep as any).blocks) || rep.text || "",
+        });
+        continue;
+      }
+
+      // Sin sobre: lo ha escrito una persona a mano en Slack.
+      const texto = (rep.text ?? "").trim();
+      const esMio = rep.user === this.me;
+
+      // Yo soy quien recibe y escribo en el hilo estando pendiente: eso ES aceptar.
+      // Antes mi propio demonio se saltaba mis mensajes y el tunel no se abria nunca
+      // desde Slack, mientras el demonio del otro lado si me reenviaba el "acepto".
+      if (esMio && t.to.slackUser === this.me && t.state === "pending") {
+        await this.onAccept(t, "en Slack");
+        if (esAcuse(texto)) continue;
+      }
+      // Mis propios mensajes no vuelven a mi propia sesion.
+      if (esMio) continue;
+      // Un "acepto" a secas no es un turno: reenviarlo solo consigue que el Claude
+      // de enfrente conteste "con un acepto no me llega".
+      if (esAcuse(texto)) continue;
+      // Un mensaje vacio no se entrega. Pasaba con los adjuntos sin texto: al otro
+      // lado le llegaba "Fulano (humano, en persona):" y nada mas debajo.
+      if (!texto) continue;
+      await this.onMessage(t, {
+        at: Math.round(Number(rep.ts) * 1000),
+        from: T.otherSide(t, this.localSideId(t)).sessionId,
+        author: "human", kind: "text", text: texto,
+      });
+    }
+  }
+
+  /** Cual de los dos lados soy yo en este hilo. */
+  private localSideId(t: T.Thread): string {
+    return t.to.slackUser === this.me ? t.to.sessionId : t.from.sessionId;
+  }
+
+  /** Descubre spochies que me han abierto. Una sola llamada, a un solo canal. */
+  private async discover() {
+    const ch = await this.inbox();
+    if (!ch) return;
+    let hist: any;
+    try {
+      hist = await this.get("conversations.history", {
+        channel: ch, oldest: this.inboxCursor, limit: "20", include_all_metadata: "true",
+      });
+    } catch { return; }
+    const known = new Set(T.all().map(t => t.id));
+    for (const msg of (hist.messages ?? []).slice().reverse()) {
+      if (msg.ts > this.inboxCursor) this.inboxCursor = msg.ts;
+      const env = envelopeOf(msg);
+      if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
+      // Un spochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
+      if (T.yaVisto(env.id)) continue;
+      await this.materialize(env, ch, msg.thread_ts ?? msg.ts, bodyFromBlocks(msg.blocks));
+    }
+  }
+
+  /** Crea el hilo local de un spochie que me llega de otra maquina. Queda
+   *  pendiente hasta que mi humano acepte: la invitacion la entrega el demonio
+   *  a la sesion local que encaje, o al registrarse la siguiente. */
+  private async materialize(env: Envelope, channel: string, ts: string, cuerpo = "") {
+    const now = Date.now();
+    const t: T.Thread = {
+      id: env.id,
+      subject: env.subject ?? "(sin asunto)",
+      from: { sessionId: `slack:${env.from}`, name: env.fromName ?? "remoto", cwd: "(otra maquina)", human: env.fromName, slackUser: env.from },
+      to: { sessionId: `slack:${this.me}`, name: "yo", cwd: "(esta maquina)", slackUser: this.me },
+      state: "pending",
+      createdAt: now,
+      lastActivityAt: now,
+      context: (env.context as T.Thread["context"]) ?? {},
+      slack: { channel, ts },
+      messages: [],
+    };
+    T.save(t);
+    await this.onMessage(t, {
+      at: now, from: t.from.sessionId, author: "claude", kind: "text",
+      text: cuerpo || "(el mensaje de apertura llego vacio)",
+    });
+  }
+}
