@@ -3,6 +3,9 @@
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" }] }
     ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/touch.sh\"" }] }
+    ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.sh\"" }] }
     ]

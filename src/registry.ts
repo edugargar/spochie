@@ -12,6 +12,9 @@ export type SessionRecord = {
   startedAt: number;
   /** Si es un Claude aparte, el id del spochie que atiende. No se le asigna otro. */
   aparte?: string;
+  /** Ultima vez que la persona escribio en esa sesion (mtime del registro, que el hook
+   *  UserPromptSubmit toca). Es lo que dice "la terminal en la que estoy trabajando". */
+  activeAt?: number;
 };
 
 /** El id acaba siendo un nombre de fichero. Cuando el hook no trae session_id se
@@ -57,9 +60,11 @@ export function liveSessions(): SessionRecord[] {
     try { rec = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
     // Un Claude aparte recibe por stdin del demonio: no tiene socket que comprobar.
     if (!alive(rec.pid) || (!rec.aparte && !existsSync(rec.socket))) { try { unlinkSync(p); } catch {} continue; }
+    try { rec.activeAt = Math.max(rec.startedAt, statSync(p).mtimeMs); } catch { rec.activeAt = rec.startedAt; }
     out.push(rec);
   }
-  return out.sort((a, b) => b.startedAt - a.startedAt);
+  // La mas activa primera: la que tiene el ultimo prompt del humano, no la ultima en arrancar.
+  return out.sort((a, b) => (b.activeAt ?? b.startedAt) - (a.activeAt ?? a.startedAt));
 }
 
 export function findSession(needle: string): SessionRecord[] {

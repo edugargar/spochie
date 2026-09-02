@@ -174,24 +174,40 @@ test("un mensaje vacio no sale", async () => {
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
 }, 20_000);
 
-test("con varias sesiones y ninguna que encaje, el aviso de take llega una vez por sesion", async () => {
+test("con varias sesiones y ninguna que encaje, la invitacion entera entra en UNA: la mas activa", async () => {
+  const { utimesSync } = await import("node:fs");
+  const { SESSIONS_DIR } = await import("../src/paths.ts");
   // Un spochie llegado por Slack, sin lado local, con una rama que ninguna sesion tiene.
-  const t: T.Thread = {
-    id: "amb1", subject: "ambiguo", state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
+  const sobre = (id: string, subject: string): T.Thread => ({
+    id, subject, state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
     from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(otra maquina)", human: "Ana", slackUser: "U_ANA" },
     to: { sessionId: "slack:U_ME", name: "yo", cwd: "(esta maquina)", slackUser: "U_ME" },
-    context: { branch: "feat/no-existe-en-ningun-checkout" }, messages: [],
-  };
-  T.save(t);
-  const cuenta = (box: { got: string[] }) => box.got.filter(x => x.includes("spochie take amb1")).length;
-  const a0 = cuenta(A), b0 = cuenta(B);
-  // claim recorre todos los hilos y llama a assign: es lo que pasa con cada mensaje del hilo.
-  await rpc({ op: "claim", sessionId: "A" });
-  expect(await llega(A, x => x.includes("spochie take amb1"))).toBe(true);
-  expect(await llega(B, x => x.includes("spochie take amb1"))).toBe(true);
-  await rpc({ op: "claim", sessionId: "A" });
+    context: { branch: "feat/no-existe-en-ningun-checkout" },
+    messages: [{ at: Date.now(), from: "slack:U_ANA", author: "claude", kind: "text", text: `la pregunta de ${id}` }],
+  });
+  // A es donde la persona escribio por ultima vez: su registro es el mas reciente.
+  const ahora = new Date(); const antes = new Date(Date.now() - 60_000);
+  utimesSync(join(SESSIONS_DIR, "A.json"), ahora, ahora);
+  utimesSync(join(SESSIONS_DIR, "B.json"), antes, antes);
+  T.save(sobre("amb1", "ambiguo"));
   await rpc({ op: "claim", sessionId: "B" });
+  // La invitacion completa, con la pregunta, en A. En B nada. Y ninguna linea de "haz take".
+  expect(await llega(A, x => x.includes("spochie accept amb1") && x.includes("la pregunta de amb1"))).toBe(true);
   await sleep(300);
-  expect(cuenta(A)).toBe(a0 + 1);
-  expect(cuenta(B)).toBe(b0 + 1);
+  expect(B.got.some(x => x.includes("amb1"))).toBe(false);
+  expect(A.got.some(x => x.includes("hay varias sesiones tuyas abiertas"))).toBe(false);
+  // Pero si le dice que hay otras, por si no era esta.
+  expect(A.got.some(x => x.includes("amb1") && x.includes("spochie take amb1"))).toBe(true);
+
+  // Si el asunto nombra el directorio de una sesion, esa gana aunque no sea la mas activa.
+  register({ sessionId: "C", name: "modal-front", cwd: "/repo/modal-front", socket: B.sock, token: "tb", pid: process.pid, startedAt: 3 });
+  utimesSync(join(SESSIONS_DIR, "C.json"), antes, antes);
+  const b0 = B.got.length;
+  T.save(sobre("amb2", "el boton de modal-front no cierra"));
+  await rpc({ op: "claim", sessionId: "A" });
+  expect(await llega(B, x => x.includes("spochie accept amb2"))).toBe(true);
+  expect(B.got.slice(b0).some(x => x.includes("amb2"))).toBe(true);
+  expect(A.got.some(x => x.includes("amb2"))).toBe(false);
+  const { unregister } = await import("../src/registry.ts");
+  unregister("C");
 });
