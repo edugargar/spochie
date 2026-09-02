@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SlackBridge, envelopeOf, inviteBlocks, messageBlocks, noticeBlocks, fallbackText, chunk, esAcuse, bodyFromBlocks, EVENT, type Envelope } from "../src/slack.ts";
+import { SlackBridge, envelopeOf, inviteBlocks, messageBlocks, noticeBlocks, fallbackText, chunk, esAcuse, bodyFromBlocks, cadenciaDescubrir, EVENT, type Envelope } from "../src/slack.ts";
 import { MAX_PARCHE } from "../src/threads.ts";
 import type { Thread, Msg } from "../src/threads.ts";
 
@@ -142,16 +142,15 @@ test("el gasto de un equipo de 15 cabe en el limite de Slack", () => {
   // tope o acelera el descubrimiento, la cuenta tiene que salir mal aqui.
   const B = SlackBridge as any;
   const tope: number = B.TOPE_HILOS;
-  const activoMs: number = B.DESCUBRIR_ACTIVO_MS;
-  const reposoMs: number = B.DESCUBRIR_REPOSO_MS;
 
   // El limite Tier 3 es ~50/min por metodo y POR APP, o sea compartido por el equipo.
   const LIMITE = 50;
-  const enReposo = 13, activos = 2;
+  const equipo = 15, activos = 2;
   const porMinuto = (cadaMs: number) => 60_000 / cadaMs;
 
-  // conversations.history: una por ronda de descubrimiento y por persona.
-  const history = enReposo * porMinuto(reposoMs) + activos * porMinuto(activoMs);
+  // conversations.history: una por ronda de descubrimiento y por persona, a la cadencia
+  // que le toca a un equipo de 15. Los 15 demonios descubren a la vez, con o sin conversacion.
+  const history = equipo * porMinuto(cadenciaDescubrir(equipo));
   // conversations.replies: un tick cada 4 s mirando como mucho TOPE_HILOS hilos,
   // pero una conversacion de dos solo tiene un hilo vivo por lado.
   const replies = activos * Math.min(1, tope) * porMinuto(4_000);
@@ -169,4 +168,15 @@ test("un parche que cabe no se corta por el camino", () => {
   const texto = JSON.stringify(bloques);
   // El aviso de corte solo aparece si algo se quedo fuera, y lo que cabe no se queda fuera.
   expect(texto).not.toContain("sigue en el transcript");
+});
+
+test("el buzon se mira tan a menudo como el cupo de la app permita al equipo real", async () => {
+  const { cadenciaDescubrir } = await import("../src/slack.ts");
+  expect(cadenciaDescubrir(1)).toBe(5_000);
+  expect(cadenciaDescubrir(2)).toBe(5_000);
+  expect(cadenciaDescubrir(4)).toBe(9_600);
+  expect(cadenciaDescubrir(15)).toBe(36_000);
+  expect(cadenciaDescubrir(25)).toBe(60_000);
+  // 25 demonios a esa cadencia gastan 25 llamadas por minuto, la mitad del cupo.
+  expect(Math.round(25 * 60_000 / cadenciaDescubrir(25))).toBe(25);
 });

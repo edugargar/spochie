@@ -308,10 +308,11 @@ Alternatives I tried and dropped, with the measurement:
 
 `conversations.replies` and `conversations.history` are Tier 3: about 50 per minute **per
 method and per app**, shared by the whole team. So each daemon caps itself: at most 4
-threads per tick, round-robin, and the inbox is polled every 15 s with a live conversation
-and every 60 s at rest. For 15 people with two conversations at once that's about 21
-`history` and 24 `replies` calls per minute. On a 429, `Retry-After` is honoured and
-everything stops.
+threads per tick, round-robin, and the inbox poll adapts to the team size (your contacts
+plus you) so that discovery never uses more than 25 `history` calls a minute in total:
+every 5 s for up to 2 people, 10 s for 4, 36 s for 15, 60 s for 25. An invitation shows
+up within one poll. For 15 people with two conversations at once that's 25 `history` and
+24 `replies` calls per minute. On a 429, `Retry-After` is honoured and everything stops.
 
 ## Screenshots and files
 

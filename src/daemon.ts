@@ -24,8 +24,9 @@ import { repoMatches } from "./match.ts";
 
 /** Con un tick fijo de 20s, cada salto del tunel se comia hasta 20s de espera y una
  *  conversacion de 6 mensajes acumulaba dos minutos de nada. Mientras hay un spochie
- *  abierto se mira cada 4s; en reposo, cada 20s, que no cuesta nada. */
-const TICK_IDLE_MS = 20_000;
+ *  abierto se mira cada 4s; en reposo, cada 5s: el tick en si no llama a Slack, solo
+ *  decide si toca descubrir (cadenciaDescubrir), asi que no cuesta nada. */
+const TICK_IDLE_MS = 5_000;
 const TICK_VIVO_MS = 4_000;
 
 export function log(...a: unknown[]) {

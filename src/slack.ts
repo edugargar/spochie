@@ -203,6 +203,20 @@ type OnAccept = (t: T.Thread, como: string) => Promise<void>;
 type OnRemoteAccept = (t: T.Thread, como: string) => Promise<void>;
 type OnOrden = (t: T.Thread, orden: "suelta" | "descarta") => Promise<void>;
 
+/**
+ * Cada cuanto mira el buzon un demonio, segun cuantos demonios comparten la app.
+ *
+ * `conversations.history` es Tier 3: unas 50 llamadas por minuto para toda la app. La
+ * mitad, 25, se reparte entre los demonios para descubrir spochies nuevos; la otra
+ * mitad queda para el que acaba de abrir uno y para no ir al limite. Con 2 personas
+ * salen 12 al minuto cada uno, que es el suelo de 5 s; con 4, 10 s; con 15, 36 s; con
+ * 25, 60 s. El equipo son los contactos de la agenda mas uno. Si Slack devuelve 429
+ * igualmente, el demonio se congela lo que Slack le diga (ver `frozen`).
+ */
+export function cadenciaDescubrir(equipo: number, sueloMs = 5_000): number {
+  return Math.max(sueloMs, Math.round(Math.max(1, equipo) * 60_000 / 25));
+}
+
 export class SlackBridge {
 
   private lastDiscovery = 0;
@@ -419,24 +433,18 @@ export class SlackBridge {
    *
    * `conversations.replies` y `conversations.history` son Tier 3: del orden de 50 por
    * minuto y por metodo, contadas **por app**, no por persona. Como todo el equipo
-   * comparte la misma app, el gasto de los quince se suma en el mismo cubo. Mi primer
+   * comparte la misma app, el gasto de todos se suma en el mismo cubo. Mi primer
    * intento (6 hilos cada 4s) daban 105 llamadas por minuto y por demonio: por catorce
    * personas, ni de lejos.
    *
-   * La cuenta que si sale, para un equipo de 15 con dos conversaciones vivas a la vez:
-   *
-   *   descubrimiento en reposo   13 demonios x 1/min  = 13/min de history
-   *   descubrimiento activo       2 demonios x 4/min  =  8/min de history
-   *   hilos vivos                 2 demonios x 12/min = 24/min de replies
-   *
-   * Unas 21 de history y 24 de replies por minuto, con el limite en 50 de cada uno.
-   * Queda holgura para que alguien abra un tercer spochie sin tirar a nadie.
+   * El descubrimiento (history) se reparte por cadenciaDescubrir: 25 llamadas por
+   * minuto entre todos los demonios, sean 2 o 25, con un suelo de 5 s por demonio. Los
+   * hilos vivos (replies) van a 12/min por demonio con conversacion, como mucho 4
+   * hilos por tic. Para 15 personas con dos conversaciones vivas: 25 de history y 24 de
+   * replies por minuto, con el limite en 50 de cada uno.
    */
   private static TOPE_HILOS = 4;
   private static RECIENTE_MS = 2 * 60 * 1000;
-  /** Cada cuanto se mira el buzon: rapido si hay conversacion, lento si no hay nada. */
-  private static DESCUBRIR_ACTIVO_MS = 15_000;
-  private static DESCUBRIR_REPOSO_MS = 60_000;
   private rueda = 0;
   private ultimaMirada = new Map<string, number>();
   private ultimoDescubrir = 0;
@@ -444,7 +452,7 @@ export class SlackBridge {
   /** Lo que gasta este demonio ahora mismo, para poder decirlo en `spochie doctor`. */
   presupuesto(): { hilos: number; historyPorMin: number; repliesPorMin: number } {
     const vivos = T.all().filter(t => t.state !== "closed" && t.slack).length;
-    const cadencia = vivos ? SlackBridge.DESCUBRIR_ACTIVO_MS : SlackBridge.DESCUBRIR_REPOSO_MS;
+    const cadencia = cadenciaDescubrir(Object.keys(Cfg.load().contacts ?? {}).length + 1);
     return {
       hilos: vivos,
       historyPorMin: Math.round(60_000 / cadencia),
@@ -473,10 +481,8 @@ export class SlackBridge {
       if (this.frozen) return;
     }
 
-    // El buzon no hace falta mirarlo al ritmo de la conversacion: un spochie que llega
-    // puede esperar quince segundos, y en reposo un minuto. Esto es lo que evita que
-    // quince demonios sin nada que hacer se coman el cubo de llamadas del equipo.
-    const cadencia = abiertos.length ? SlackBridge.DESCUBRIR_ACTIVO_MS : SlackBridge.DESCUBRIR_REPOSO_MS;
+    // El buzon se mira tan a menudo como el cupo compartido permita al equipo que hay.
+    const cadencia = cadenciaDescubrir(Object.keys(Cfg.load().contacts ?? {}).length + 1);
     if (ahora - this.ultimoDescubrir >= cadencia) {
       this.ultimoDescubrir = ahora;
       await this.discover();
