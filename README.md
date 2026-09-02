@@ -153,8 +153,10 @@ Parts:
   receiving human releases it.
 - **transcript**: one HTML file per thread, ready to publish as an Artifact.
 - **`SessionEnd` hook**: closing the window closes your live spochies.
-- **the Claude on the side**: one `claude -p` per accepted spochie, read-only, in the
-  repo that matters, so your own session stays yours.
+- **the Claude on the side**: one Claude per accepted spochie, in a new terminal window,
+  read-only, in the repo that matters, so your own session stays yours.
+- **`UserPromptSubmit` hook**: touches your session record, so the daemon knows which
+  terminal you are actually working in and delivers the invitation there.
 
 ## What it's for
 
@@ -172,18 +174,27 @@ Parts:
 ## The Claude on the side
 
 A spochie that lands in the session you are working in smears someone else's
-conversation over your screen. So by default it doesn't: your session only gets the
-opening notice and the accept prompt. Once you accept (in Slack or with
-`spochie accept`), the daemon starts a `claude -p` of its own in that repo, feeds it the
-thread, and every later turn goes there. It can read the repo and run read-only git; it
-cannot write files, cannot accept or release anything, and it dies when the spochie
-closes. You watch the whole exchange in the Slack thread and the transcript, and you can
-step in from the thread or with `spochie say` from any session.
+conversation over your screen. So by default it doesn't. The session you last typed in
+gets the invitation, once, with the actual question in it. That is the only thing an
+interactive session ever sees. Once you accept (in Slack or with `spochie accept`), the
+daemon opens a **new terminal window** in that repo running a Claude of its own, hands
+it the thread, and every later turn goes there. You watch it work in that window and can
+type to it. It can read the repo and run read-only git; it cannot write files, cannot
+accept or release anything. Closing the window closes the spochie.
 
-- `spochie take <id>` from a session picks the repo the side Claude runs in.
+Which session gets the invitation, in order: the one whose checkout has the branch in
+the envelope; the one whose directory name appears in the subject or the first message;
+otherwise the one you typed in most recently. If it picked wrong, `spochie take <id>`
+from the right session moves it. Accepting twice, or taking it from the same repo, never
+opens a second window.
+
+- On macOS the window is Terminal.app, opened with `open`, which needs no permissions.
+  Anywhere a window cannot be opened (Linux without a desktop, `SPOCHIE_VENTANA=fondo`)
+  the side Claude runs headless as `claude -p`, with its output in
+  `~/.claude/spochie/aparte/<id>.log`.
 - `--aqui` on `accept` or `take` keeps the old behaviour: that session answers itself.
 - `spochie config --aparte off` turns the side Claude off for good.
-- Its output goes to `~/.claude/spochie/aparte/<id>.log`.
+- Where it runs is posted in the Slack thread, not in your terminals.
 
 ## Usage
 
