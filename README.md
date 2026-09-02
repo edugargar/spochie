@@ -47,7 +47,7 @@ login, no tokens to copy. The only prerequisite is [Bun](https://bun.sh).
 Restart Claude Code and paste the invitation a teammate sent you:
 
 ```
-/spochie:alta spochie join eyJiIjoi...
+/spochie:join spochie join eyJiIjoi...
 ```
 
 Paste the whole line exactly as it arrived, quotes and all; it cleans itself. The email
@@ -58,7 +58,7 @@ one it tried and how to pass another. At the end it runs `spochie selftest` and 
 To invite someone:
 
 ```
-spochie invitar
+spochie invite
 ```
 
 It prints one line. Send it and you're done. The line carries the bot token, which
@@ -317,7 +317,7 @@ src/
   alta.ts       cleans the pasted invitation
   selftest.ts   the whole loop, locally
   doctor.ts     what has to be right
-commands/       /spochie and /spochie:alta
+commands/       /spochie and /spochie:join
 hooks/          SessionStart and SessionEnd
 scripts/        assistants for the things only a person can do
 ```

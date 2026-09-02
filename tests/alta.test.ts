@@ -8,7 +8,7 @@ test("la cadena se saca del comando entero pegado", () => {
 });
 
 test("la cadena se saca de la barra del plugin y de las comillas de Slack", () => {
-  expect(limpiarCadena("/spochie:alta `" + blob + "`")).toBe(blob);
+  expect(limpiarCadena("/spochie:join `" + blob + "`")).toBe(blob);
 });
 
 test("la cadena suelta vale tal cual", () => {

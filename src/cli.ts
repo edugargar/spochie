@@ -103,7 +103,7 @@ const USAGE = `spochie - tunel entre sesiones de Claude Code de personas distint
   spochie config [--human "Edu"] [--guardian on|off] [--transcript on|off]
 
   Alta de otra persona, en un pegado:
-  spochie invitar                       imprime la linea que le mandas
+  spochie invite                        imprime la linea que le mandas
   spochie join <cadena> [--email <mail>] la que ejecuta quien se da de alta
       (el email sale de git config si no lo pasas; pega la linea entera, se limpia sola)
 
@@ -176,7 +176,7 @@ async function main() {
   // la que hay que tener acceso de admin) sobra: el token de usuario solo servia para
   // buscar personas, y eso lo hace el bot si la app tiene users:read. Asi que lo unico
   // que hay que pasarle a alguien es el token del bot, que es de la app, no suyo.
-  if (cmd === "invitar") {
+  if (cmd === "invite") {
     const c = Cfg.load();
     const bot = Cfg.slackBotToken(c);
     if (!bot) { console.error("aqui no hay token de bot configurado; no puedo invitar a nadie"); process.exit(1); }
@@ -201,14 +201,14 @@ async function main() {
     return;
   }
 
-  if (cmd === "join" || cmd === "alta") {
+  if (cmd === "join") {
     const { limpiarCadena, leerInvitacion, emailDeGit } = await import("./alta.ts");
     // Se limpia todo lo pegado, no solo rest[0]: quien se da de alta pega la linea
     // entera tal cual se la mandaron, con "spochie join" delante y comillas de Slack.
     const blob = limpiarCadena(rest.join(" "));
     if (!blob) {
       console.error("no veo ninguna invitacion en lo que has pegado.");
-      console.error("Pidele a quien te da de alta que corra `spochie invitar` y mandarte la linea entera.");
+      console.error("Pidele a quien te da de alta que corra `spochie invite` y mandarte la linea entera.");
       process.exit(2); return;
     }
     const datos = leerInvitacion(blob);

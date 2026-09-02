@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 export type Invitacion = { b: string; t?: string };
 
 /** Lo que llega pegado nunca es la cadena limpia. Puede venir el comando entero
- *  ("spochie join eyJ... --email x"), la barra del plugin ("/spochie:alta eyJ..."),
+ *  ("spochie join eyJ... --email x"), la barra del plugin ("/spochie:join eyJ..."),
  *  comillas invertidas de Slack, o el trozo suelto. Se busca el unico token que
  *  puede ser base64url largo y se ignora todo lo demas. */
 export function limpiarCadena(entrada: string): string | null {

@@ -212,7 +212,7 @@ pause
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "Pegar la invitacion"
-say "Quien te da de alta ha corrido 'spochie invitar' y te ha pasado una linea que"
+say "Quien te da de alta ha corrido 'spochie invite' y te ha pasado una linea que"
 say "empieza por 'spochie join'. Pegala entera aqui, con su --email o su --user."
 say ""
 say "No hace falta que instales nada en Slack ni que tengas ningun token tuyo:"
