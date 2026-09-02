@@ -35,7 +35,10 @@ export function comandoCli(): string {
 
 /** Lo unico que el Claude aparte puede ejecutar sin preguntar. */
 export function herramientasPermitidas(cli = comandoCli()): string[] {
-  const git = ["diff", "log", "show", "status", "branch", "blame", "grep", "ls-files"].map(g => `Bash(git ${g}:*)`);
+  // `git branch` a secas admite -D y -f; solo se permite listar. Lo que queda es de
+  // lectura en la practica: `git diff --output=<fichero>` podria escribir uno, y el patron
+  // de allowedTools no filtra argumentos. Se asume y se dice.
+  const git = ["diff", "log", "show", "status", "branch --list", "blame", "grep", "ls-files"].map(g => `Bash(git ${g}:*)`);
   const sp = ["say", "patch", "branch", "show", "list", "close"].map(c => `Bash(${cli} ${c}:*)`);
   return ["Read", "Grep", "Glob", ...git, ...sp];
 }

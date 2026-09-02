@@ -56,6 +56,8 @@ test("el aparte solo puede leer, hablar por el tunel y cerrar", () => {
   expect(h).toContain("Read");
   expect(h).toContain("Bash(/x/spochie say:*)");
   expect(h).toContain("Bash(git diff:*)");
+  expect(h).not.toContain("Bash(git branch:*)");
+  expect(h).toContain("Bash(git branch --list:*)");
   expect(h.join(" ")).not.toMatch(/Edit|Write|accept|release|discard|Bash\(sh|Bash\(git push/);
 });
 
