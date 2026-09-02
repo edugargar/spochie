@@ -9,6 +9,9 @@ export type Config = {
   guardian: boolean;
   /** Publicar el transcript como Artifact al abrir y en cada turno. */
   transcript: boolean;
+  /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
+   *  preguntar a Slack, que para buscar por nombre exige users:read. */
+  contacts?: Record<string, { id: string; name: string }>;
   slack?: {
     /** Token de usuario (xoxp-) de tu app de Slack, obtenido por OAuth. Tuyo, no compartido.
      *  Vacio si usas tokenFile. Ya no hace falta para nada: con el de bot basta. */
@@ -60,6 +63,18 @@ export function slackBotToken(c: Config): string | null {
     const t = JSON.parse(readFileSync(c.slack.tokenFile, "utf8"))[c.slack.botTokenKey ?? "botToken"];
     return typeof t === "string" && t ? t : null;
   } catch { return null; }
+}
+
+/** Guarda un contacto por su nombre en minusculas y sin espacios, que es como se
+ *  escribe despues de la arroba. */
+export function addContact(c: Config, p: { id: string; name: string }) {
+  c.contacts = { ...(c.contacts ?? {}), [claveContacto(p.name)]: p };
+}
+
+export const claveContacto = (n: string) => n.toLowerCase().replace(/\s+/g, "");
+
+export function contact(c: Config, needle: string): { id: string; name: string } | null {
+  return c.contacts?.[claveContacto(needle)] ?? null;
 }
 
 export function save(c: Config) {

@@ -103,7 +103,8 @@ const USAGE = `spochie - tunel entre sesiones de Claude Code de personas distint
   spochie config [--human "Edu"] [--guardian on|off] [--transcript on|off]
 
   Alta de otra persona, en un pegado:
-  spochie invite                        imprime la linea que le mandas
+  spochie invite --to <U0..|email> [--name Alex]   el bot le manda la invitacion por DM, con los pasos
+  spochie invite                        o imprime la linea para mandarsela tu
   spochie join <cadena> [--email <mail>] la que ejecuta quien se da de alta
       (el email sale de git config si no lo pasas; pega la linea entera, se limpia sola)
 
@@ -179,24 +180,56 @@ async function main() {
   if (cmd === "invite") {
     const c = Cfg.load();
     const bot = Cfg.slackBotToken(c);
-    if (!bot) { console.error("aqui no hay token de bot configurado; no puedo invitar a nadie"); process.exit(1); }
+    if (!bot || !c.slack?.userId) { console.error("aqui no hay Slack configurado; no puedo invitar a nadie"); process.exit(1); return; }
     const { whoIs } = await import("./slack.ts");
+    const { crearInvitacion, textoInvitacion } = await import("./alta.ts");
     const quien = await whoIs(bot);
-    if (!quien) { console.error("el token de bot que tienes no vale (auth.test)"); process.exit(1); }
+    if (!quien) { console.error("el token de bot que tienes no vale (auth.test)"); process.exit(1); return; }
+    const yo = { id: c.slack.userId, name: c.human ?? userInfo().username };
+    const api = (m: string, body: unknown) => fetch(`https://slack.com/api/${m}`, {
+      method: "POST", headers: { authorization: `Bearer ${bot}`, "content-type": "application/json" }, body: JSON.stringify(body),
+    }).then(r => r.json());
 
-    // Si el bot no puede buscar personas, quien se de alta no podra resolver su propio
-    // id por email y habra que pasarselo a mano. Mejor decirlo aqui que alli.
-    const r = await fetch("https://slack.com/api/users.list?limit=1", { headers: { authorization: `Bearer ${bot}` } });
-    const puedeBuscar = (await r.json()).ok === true;
+    // Con --to, el bot le manda la invitacion por DM con los pasos dentro. Asi no hay
+    // nada que copiar, y como la invitacion ya dice para quien es, el alta no tiene
+    // que buscarse en Slack (que exige users:read, un scope que puede faltar).
+    const to = flag(rest, "to");
+    if (to) {
+      let dest: { id: string; name: string } | null = Cfg.contact(c, to);
+      if (!dest && /^[UW][A-Z0-9]{6,}$/.test(to)) {
+        // Sin users:read el nombre no se puede sacar de Slack; --name lo pone quien invita.
+        const r = await api("users.info", { user: to });
+        const nombre = flag(rest, "name") ?? (r.ok ? (r.user?.profile?.real_name ?? r.user?.name) : undefined);
+        if (!nombre) { console.error(`la app no puede leer el nombre de ${to}; dimelo tu:  spochie invite --to ${to} --name Alex`); process.exit(1); return; }
+        dest = { id: to, name: nombre };
+      }
+      if (!dest && to.includes("@")) {
+        const r = await api("users.lookupByEmail", { email: to });
+        if (r.ok) dest = { id: r.user.id, name: r.user.profile?.real_name ?? r.user.name };
+        else if (r.error === "missing_scope") console.error(`la app no puede buscar por email (falta users:read.email de bot).`);
+      }
+      if (!dest) {
+        console.error(`no se a quien mandarsela: pasa su id de Slack, --to U01234567 (esta en su perfil, "Copiar id de miembro").`);
+        process.exit(1); return;
+      }
+      const blob = crearInvitacion({ b: bot, t: quien.team, u: dest.id, i: yo });
+      const im = await api("conversations.open", { users: dest.id });
+      if (!im.ok) { console.error(`no puedo abrir el DM con ${dest.name}: ${im.error}`); process.exit(1); return; }
+      const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name) });
+      if (!post.ok) { console.error(`no he podido mandar el DM: ${post.error}`); process.exit(1); return; }
+      Cfg.addContact(c, dest); Cfg.save(c);
+      console.log(`Enviada a ${dest.name} por DM del bot, con los pasos dentro. Ya puedes escribirle @${Cfg.claveContacto(dest.name)}.`);
+      return;
+    }
 
-    const blob = Buffer.from(JSON.stringify({ b: bot, t: quien.team })).toString("base64url");
+    const r = await api("users.list", { limit: 1 });
+    const blob = crearInvitacion({ b: bot, t: quien.team, i: yo });
     console.log(`Mandale esto a quien quieras dar de alta. Es una linea:\n`);
-    console.log(`  spochie join ${blob} --email <su-email-de-slack>\n`);
-    if (!puedeBuscar) {
-      console.log(`Ojo: la app no tiene users:read de bot, asi que --email no le va a valer.`);
-      console.log(`Anade users:read y users:read.email como scopes de BOT en api.slack.com/apps,`);
-      console.log(`reinstala la app una vez, y entonces con el email basta. Mientras tanto, que`);
-      console.log(`pase su id de Slack:  spochie join ${blob} --user U01234567`);
+    console.log(`  /spochie:join ${blob}\n`);
+    if (r.ok) console.log(`Su email lo saca de git; si no cuadra con Slack, que anada --email <mail>.`);
+    else {
+      console.log(`Ojo: la app no tiene users:read de bot, asi que tendra que anadir --user <su id de Slack>.`);
+      console.log(`Mas facil: spochie invite --to <su id>, y el bot le manda la invitacion ya resuelta por DM.`);
     }
     return;
   }
@@ -219,8 +252,8 @@ async function main() {
     if (!bot) { console.error("el token de la invitacion ya no vale. Pide otra."); process.exit(1); }
 
     // Tu id de Slack: por email si el bot puede buscar, o a mano.
-    let userId = flag(rest, "user");
-    const email = flag(rest, "email") ?? emailDeGit();
+    let userId = flag(rest, "user") ?? datos.u;
+    const email = userId ? undefined : (flag(rest, "email") ?? emailDeGit());
     if (!userId && email) {
       const r = await fetch(`https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
         { headers: { authorization: `Bearer ${datos.b}` } });
@@ -245,7 +278,9 @@ async function main() {
     const c = Cfg.load();
     c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
     if (!c.human) c.human = flag(rest, "nombre") ?? userInfo().username;
+    if (datos.i) Cfg.addContact(c, datos.i);
     Cfg.save(c);
+    if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.claveContacto(datos.i.name)}.`);
     console.log(`Listo. Estas dentro de ${bot!.team} como ${userId}${email ? ` (${email})` : ""}, y el bot es ${bot!.user}.`);
     await ensureDaemon();
     await rpc({ op: "slack-reload" }).catch(() => {});

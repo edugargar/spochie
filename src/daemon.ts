@@ -91,8 +91,10 @@ async function handle(req: Req): Promise<any> {
       let to: T.Side;
       if (remote) {
         if (!slack) return { ok: false, error: "Slack no esta configurado: corre `spochie slack setup`" };
-        const u = await slack.lookupUser(req.to.slice(1));
-        if (!u) return { ok: false, error: `no encuentro a ${req.to} en Slack` };
+        // Primero la agenda local: quien te invito o a quien invitaste. Slack solo
+        // si no esta, porque buscar por nombre alli exige un scope que puede faltar.
+        const u = Cfg.contact(cfg, req.to.slice(1)) ?? await slack.lookupUser(req.to.slice(1));
+        if (!u) return { ok: false, error: `no encuentro a ${req.to}: ni en tu agenda de spochie ni en Slack` };
         to = { sessionId: `slack:${u.id}`, name: u.name, cwd: "(otra maquina)", human: u.name, slackUser: u.id };
       } else {
         const matches = findSession(req.to).filter(s => s.sessionId !== req.sessionId);

@@ -33,3 +33,34 @@ test("lo que no es una invitacion no cuela", () => {
   expect(leerInvitacion("no-es-base64-de-nada")).toBeNull();
   expect(leerInvitacion(Buffer.from(JSON.stringify({ t: "Equipo" })).toString("base64url"))).toBeNull();
 });
+
+import { crearInvitacion, textoInvitacion } from "../src/alta.ts";
+import * as Cfg from "../src/config.ts";
+
+test("la invitacion dirigida lleva para quien es y quien invita, y sobrevive al pegado", () => {
+  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40), t: "Equipo", u: "U0ALEX01", i: { id: "U0EDU001", name: "Edu" } });
+  const leida = leerInvitacion(limpiarCadena(textoInvitacion(blob, "Edu"))!);
+  expect(leida?.u).toBe("U0ALEX01");
+  expect(leida?.i).toEqual({ id: "U0EDU001", name: "Edu" });
+});
+
+test("un destinatario que no parece un id de Slack se ignora", () => {
+  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40), u: "../etc" as any });
+  expect(leerInvitacion(blob)?.u).toBeUndefined();
+});
+
+test("el DM lleva los cuatro pasos y la cadena entera", () => {
+  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40) });
+  const t = textoInvitacion(blob, "Edu");
+  expect(t).toContain("/plugin marketplace add edugargar/spochie");
+  expect(t).toContain("/plugin install spochie@edugargar");
+  expect(t).toContain(`/spochie:join ${blob}`);
+});
+
+test("la agenda resuelve @nombre sin distinguir mayusculas ni espacios", () => {
+  const c: Cfg.Config = { guardian: true, transcript: false };
+  Cfg.addContact(c, { id: "U0EDU001", name: "Edu Garcia" });
+  expect(Cfg.contact(c, "edugarcia")?.id).toBe("U0EDU001");
+  expect(Cfg.contact(c, "EduGarcia")?.id).toBe("U0EDU001");
+  expect(Cfg.contact(c, "alex")).toBeNull();
+});

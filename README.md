@@ -36,34 +36,39 @@ machine, and no tunnel opens until the receiving person says yes.
 
 ## Install
 
-Two commands in Claude Code, a restart, and one pasted line. No terminal, no Slack
-login, no tokens to copy. The only prerequisite is [Bun](https://bun.sh).
+One command on the inviter's side, and on the newcomer's side two commands in Claude
+Code, a restart, and one paste. No terminal, no Slack login, no tokens to copy, no Slack
+permissions to ask for. The only prerequisite is [Bun](https://bun.sh).
+
+The inviter runs:
+
+```
+spochie invite --to alex@example.com          # or --to U01234567 --name Alex
+```
+
+The bot sends the newcomer a DM with everything inside: the two plugin commands, the
+restart, and the line to paste. That line already says who it's for and who sent it, so
+the newcomer never has to be looked up in Slack and `@edu` resolves locally afterwards.
+
+The newcomer follows the DM:
 
 ```
 /plugin marketplace add edugargar/spochie
 /plugin install spochie@edugargar
 ```
 
-Restart Claude Code and paste the invitation a teammate sent you:
+restarts Claude Code, and pastes the last line of the DM:
 
 ```
-/spochie:join spochie join eyJiIjoi...
+/spochie:join eyJiIjoi...
 ```
 
-Paste the whole line exactly as it arrived, quotes and all; it cleans itself. The email
-comes from `git config user.email`, and if Slack doesn't recognise it the error says which
-one it tried and how to pass another. At the end it runs `spochie selftest` and prints
-`Todo bien` or which step failed.
+Pasting the whole DM works too; the invitation cleans itself out of whatever surrounds
+it. At the end it runs `spochie selftest` and prints `Todo bien` or which step failed.
 
-To invite someone:
-
-```
-spochie invite
-```
-
-It prints one line. Send it and you're done. The line carries the bot token, which
-belongs to the app and to nobody in particular; on the newcomer's machine it is stored in
-`~/.claude/spochie/config.json` with mode 0600.
+`spochie invite` with no `--to` prints the line for you to send by hand. The invitation
+carries the bot token, which belongs to the app and to nobody in particular; on the
+newcomer's machine it is stored in `~/.claude/spochie/config.json` with mode 0600.
 
 ## How it works
 
@@ -241,10 +246,12 @@ Everything goes through the **DM between the bot and each person**. That DM is t
 channel seen from both sides, so each machine polls exactly one channel for what arrives,
 plus one thread per open spochie.
 
-The app needs `chat:write`, `im:write`, `im:read` and `im:history` as bot scopes. For
-`join` to resolve people by email it also needs `users:read` and `users:read.email`, also
-as bot scopes; without them `join` says so and asks for the Slack user id instead. No user
-token is needed for anything.
+The app needs `chat:write`, `im:write`, `im:read` and `im:history` as bot scopes. That's
+all for the normal path: `spochie invite --to` resolves the newcomer on the inviter's
+side, and the invitation carries both ids, so nobody is looked up in Slack afterwards.
+`users:read` and `users:read.email` (bot scopes) are only needed to invite by email or
+by name instead of by Slack id, and for `@someone` who isn't in your local contacts.
+No user token is needed for anything.
 
 Alternatives I tried and dropped, with the measurement:
 
@@ -299,7 +306,7 @@ arrive and nobody notices.
 ## Development
 
 ```
-bun test                                # 80 tests, no network
+bun test                                # 84 tests, no network
 SPOCHIE_HOME=/tmp/x bun run src/daemon.ts
 ```
 
@@ -314,7 +321,7 @@ src/
   slack.ts      the bridge: discovery, threads, call budget
   threads.ts    the envelope, the fence, the limits
   outbox.ts     merges consecutive messages before publishing
-  alta.ts       cleans the pasted invitation
+  alta.ts       builds and reads invitations
   selftest.ts   the whole loop, locally
   doctor.ts     what has to be right
 commands/       /spochie and /spochie:join

@@ -13,7 +13,9 @@ $ARGUMENTS
 ## Como trabajar
 
 1. **Mira con quien puedes hablar**: `spochie sessions` para esta maquina. Para otra
-   persona, el destino es `@sunombre` y va por Slack.
+   persona, el destino es `@sunombre` y va por Slack. Quien te invito y a quien has
+   invitado estan en tu agenda (`spochie config` la ensena); un `@nombre` que no este
+   ahi se busca en Slack, y si no aparece, vale su id: `@U01234567`.
 2. **Abre el tunel** con un asunto concreto y un cuerpo que se explique solo. El otro
    Claude no sabe en que estas trabajando:
    `spochie open <destino> --subject "..." --body "..."`

@@ -1,6 +1,13 @@
 import { execFileSync } from "node:child_process";
 
-export type Invitacion = { b: string; t?: string };
+/** Lo que viaja en la invitacion. `u` es para quien va (asi el alta no tiene que
+ *  buscarse a si mismo en Slack, que exige un scope que la app puede no tener) e `i`
+ *  es quien invita, para que "@edu" resuelva en local sin llamar a Slack. */
+export type Invitacion = { b: string; t?: string; u?: string; i?: { id: string; name: string } };
+
+export function crearInvitacion(inv: Invitacion): string {
+  return Buffer.from(JSON.stringify(inv)).toString("base64url");
+}
 
 /** Lo que llega pegado nunca es la cadena limpia. Puede venir el comando entero
  *  ("spochie join eyJ... --email x"), la barra del plugin ("/spochie:join eyJ..."),
@@ -20,8 +27,32 @@ export function limpiarCadena(entrada: string): string | null {
 export function leerInvitacion(blob: string): Invitacion | null {
   try {
     const j = JSON.parse(Buffer.from(blob, "base64url").toString("utf8"));
-    return typeof j?.b === "string" && j.b ? { b: j.b, t: typeof j.t === "string" ? j.t : undefined } : null;
+    if (typeof j?.b !== "string" || !j.b) return null;
+    const inv: Invitacion = { b: j.b };
+    if (typeof j.t === "string") inv.t = j.t;
+    if (typeof j.u === "string" && /^[UW][A-Z0-9]{6,}$/.test(j.u)) inv.u = j.u;
+    if (j.i && typeof j.i.id === "string" && typeof j.i.name === "string") inv.i = { id: j.i.id, name: j.i.name };
+    return inv;
   } catch { return null; }
+}
+
+/** El DM que recibe quien se da de alta. Lleva todo lo que tiene que hacer, en
+ *  orden, con la cadena ya dentro: no hay nada que pedir aparte. */
+export function textoInvitacion(blob: string, quien: string, repo = "edugargar/spochie"): string {
+  const arroba = quien.toLowerCase().replace(/\s+/g, "");
+  return [
+    `${quien} te invita a spochie: un tunel entre tu sesion de Claude Code y la suya.`,
+    `Nadie escribe en tu maquina y ningun tunel se abre sin que tu aceptes.`,
+    ``,
+    `Para entrar (necesitas Bun: https://bun.sh):`,
+    `1. En Claude Code:  /plugin marketplace add ${repo}`,
+    `2. Despues:         /plugin install spochie@${repo.split("/")[0]}`,
+    `3. Reinicia Claude Code.`,
+    `4. Pega esto en Claude Code, entero:`,
+    `/spochie:join ${blob}`,
+    ``,
+    `Tu Claude te dira si estas dentro. Para probar, pidele: "abre un spochie con @${arroba} y preguntale que es esto".`,
+  ].join("\n");
 }
 
 /** El email de trabajo casi siempre esta ya en git, y pedirlo otra vez es un paso

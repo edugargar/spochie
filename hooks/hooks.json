@@ -1,10 +1,10 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "bun run ${CLAUDE_PLUGIN_ROOT}/src/cli.ts register" }] }
+      { "hooks": [{ "type": "command", "command": "if command -v bun >/dev/null 2>&1; then bun run \"${CLAUDE_PLUGIN_ROOT}/src/cli.ts\" register; else echo 'spochie: Bun is not installed, so spochie cannot register this session. Tell the user to run: curl -fsSL https://bun.sh/install | bash  and restart Claude Code.'; fi" }] }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "bun run ${CLAUDE_PLUGIN_ROOT}/src/cli.ts unregister" }] }
+      { "hooks": [{ "type": "command", "command": "command -v bun >/dev/null 2>&1 && bun run \"${CLAUDE_PLUGIN_ROOT}/src/cli.ts\" unregister || true" }] }
     ]
   }
 }
