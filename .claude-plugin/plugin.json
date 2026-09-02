@@ -1,6 +1,8 @@
 {
   "name": "spochie",
   "version": "0.3.0",
-  "description": "Tunel entre la sesion de Claude de una persona y la de otra, con Slack como notificacion e hilo.",
-  "author": { "name": "Eduardo Garcia" }
+  "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread.",
+  "author": {
+    "name": "Eduardo Garcia"
+  }
 }

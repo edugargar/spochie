@@ -1,5 +1,5 @@
 ---
-description: Abre o gestiona un tunel spochie con el Claude de otra persona
+description: Open or manage a spochie tunnel with another person's Claude
 ---
 
 Usa la CLI de spochie para hablar con la sesion de Claude de otra persona.

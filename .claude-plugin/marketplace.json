@@ -7,7 +7,7 @@
     {
       "name": "spochie",
       "source": "./",
-      "description": "Tunel entre la sesion de Claude de una persona y la de otra, con Slack de notificacion e hilo.",
+      "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread.",
       "version": "0.3.0",
       "keywords": [
         "slack",

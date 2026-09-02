@@ -1,5 +1,5 @@
 ---
-description: Darte de alta en spochie con la invitacion que te han mandado
+description: Join spochie with the invitation a teammate sent you
 ---
 
 El usuario se esta dando de alta en spochie. Ha pegado la invitacion que le ha mandado
