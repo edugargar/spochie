@@ -171,10 +171,6 @@ async function handle(req: Req): Promise<any> {
         kind: req.kind ?? "text",
         text: req.text, files: req.files,
       };
-      // El vigilante etiqueta, nunca bloquea. Si falla o tarda, el mensaje sale igual.
-      if (Cfg.load().guardian && m.kind === "text" && m.author !== "spochie") {
-        m.offTopic = await judge(t.subject, m.text);
-      }
       t.messages.push(m);
       t.lastActivityAt = now;
       t.avisado = false;
@@ -185,9 +181,11 @@ async function handle(req: Req): Promise<any> {
       // Cuando sale por Slack el envio va con retraso, asi que se dice "encolado":
       // decir "entregado" antes de que salga es exactamente la mentira que hace que
       // nadie se fie de un canal.
-      let delivered: boolean | "encolado";
+      let delivered: boolean | "encolado" | "retenido";
       if (sessById(other.sessionId)) {
-        delivered = await sendToSide(t, other, T.renderMessage(t, m, other.sessionId), m);
+        // El otro lado esta en esta maquina: aqui se es receptor, y el vigilante
+        // mira antes de que entre en su sesion.
+        delivered = await vigilar(t, m) ? await sendToSide(t, other, T.renderMessage(t, m, other.sessionId), m) : "retenido";
       } else {
         delivered = "encolado";
         encolar(t, m, async (tt, mm) => {
@@ -285,6 +283,16 @@ async function handle(req: Req): Promise<any> {
       return { ok: true, id: t.id };
     }
 
+    case "release":
+    case "discard": {
+      const t = T.load(req.id);
+      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
+      const mio = sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId;
+      if (req.sessionId && req.sessionId !== mio) return { ok: false, error: "solo el lado que recibe puede soltar lo retenido" };
+      const n = await soltar(t, req.op === "release" ? "suelta" : "descarta", "por CLI");
+      return { ok: true, id: t.id, [req.op === "release" ? "released" : "discarded"]: n };
+    }
+
     case "transcript-url": {
       const t = T.load(req.id);
       if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
@@ -297,7 +305,7 @@ async function handle(req: Req): Promise<any> {
     }
 
     case "slack-reload": {
-      slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept);
+      slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}));
       return { ok: true, slack: Boolean(slack) };
     }
 
@@ -395,6 +403,11 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   }
   const mio = sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId;
   const local = sessById(mio);
+  if (local && !(await vigilar(t, m))) {
+    log("slack-in", t.id, m.author, "RETENIDO", m.peligro);
+    await refreshTranscript(t);
+    return;
+  }
   if (local) {
     await send(local, conTranscript(t, mio, T.renderMessage(t, m, mio)));
     // El otro lado ve que aqui se esta trabajando, en vez de 40 segundos en blanco.
@@ -402,6 +415,52 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   }
   await refreshTranscript(t);
   log("slack-in", t.id, m.author, local ? "entregado" : "sin sesion local");
+}
+
+/** El vigilante, en el lado que recibe. Devuelve si el mensaje puede entrar.
+ *  Un mensaje que pide actuar se queda en el hilo, marcado, hasta que el humano
+ *  receptor lo suelte; uno fuera de tema entra con su etiqueta y un aviso en Slack. */
+async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
+  if (!Cfg.load().guardian || m.kind !== "text" || m.author === "spochie") return true;
+  const v = await judge(t.subject, m.text);
+  m.offTopic = { verdict: v.verdict, why: v.why };
+  const quien = T.otherSide(t, T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId).sessionId);
+  if (v.peligro) {
+    m.retenido = "si";
+    m.peligro = v.why;
+    T.save(t);
+    const receptor = T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId);
+    if (slack && t.slack) await slack.aviso(t, `:no_entry: *retenido por el vigilante*: ${v.why}. <@${receptor.slackUser ?? ""}> escribe \`suelta\` en este hilo para entregarlo, o \`descarta\`.`);
+    const local = sessById(receptor.sessionId);
+    if (local) await send(local, `[spochie ${t.id} | ${t.subject}] un mensaje de ${quien.human ?? quien.name} esta RETENIDO por el vigilante: ${v.why}. No lo has recibido. Tu humano decide: "suelta" o "descarta" en el hilo de Slack, o  spochie release ${t.id}  /  spochie discard ${t.id}`);
+    return false;
+  }
+  if (v.verdict !== "dentro") {
+    T.save(t);
+    if (slack && t.slack) await slack.aviso(t, `:warning: el vigilante lo ve *${v.verdict}* del asunto: ${v.why}`);
+  }
+  return true;
+}
+
+/** Lo que el humano receptor decide sobre lo retenido. */
+async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): Promise<number> {
+  const mio = sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId;
+  const local = sessById(mio);
+  let n = 0;
+  for (const m of t.messages) {
+    if (m.retenido !== "si") continue;
+    m.retenido = orden === "suelta" ? "suelto" : "descartado";
+    n++;
+    if (orden === "suelta" && local) await send(local, conTranscript(t, mio, T.renderMessage(t, m, mio)));
+  }
+  if (n) {
+    t.lastActivityAt = Date.now();
+    T.save(t);
+    if (slack && t.slack) await slack.aviso(t, orden === "suelta" ? `:unlock: ${n} mensaje(s) retenido(s) entregado(s) ${como}.` : `:wastebasket: ${n} mensaje(s) retenido(s) descartado(s) ${como}.`);
+    await refreshTranscript(t);
+  }
+  log("retenidos", t.id, orden, n, como);
+  return n;
 }
 
 async function closeThread(t: T.Thread, reason: string, bySession?: string) {
@@ -448,7 +507,7 @@ function main() {
   if (alreadyRunning()) { console.error("spochied ya esta corriendo"); process.exit(0); }
   if (existsSync(DAEMON_SOCK)) unlinkSync(DAEMON_SOCK);
   writeFileSync(DAEMON_LOCK, String(process.pid));
-  slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept);
+  slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}));
 
   const server = net.createServer(conn => {
     let buf = "";
