@@ -9,6 +9,9 @@ export type Config = {
   guardian: boolean;
   /** Publicar el transcript como Artifact al abrir y en cada turno. */
   transcript: boolean;
+  /** Los spochies que llegan los atiende un Claude aparte (claude -p en el repo), no la
+   *  sesion donde trabajas. Esa solo recibe el aviso. Apagado, todo entra en tu sesion. */
+  aparte?: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
   contacts?: Record<string, { id: string; name: string; pk?: string }>;
@@ -36,7 +39,7 @@ export type Config = {
 };
 
 const FILE = join(ROOT, "config.json");
-const DEFAULTS: Config = { guardian: true, transcript: false };
+const DEFAULTS: Config = { guardian: true, transcript: false, aparte: true };
 
 export function load(): Config {
   ensureDirs();

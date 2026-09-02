@@ -62,7 +62,7 @@ esac
   chmodSync(join(bin, "claude"), 0o755);
 
   mkdirSync(join(HOME, "sessions"), { recursive: true, mode: 0o700 });
-  writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: true, transcript: false, human: "Edu" }), { mode: 0o600 });
+  writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: true, transcript: false, aparte: false, human: "Edu" }), { mode: 0o600 });
   for (const [id, box, cwd] of [["VA", A, "/repo/va"], ["VB", B, "/repo/vb"]] as const) {
     writeFileSync(join(HOME, "sessions", `${id}.json`),
       JSON.stringify({ sessionId: id, name: `repo-${id.toLowerCase()}`, cwd, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }),

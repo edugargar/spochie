@@ -153,6 +153,8 @@ Parts:
   receiving human releases it.
 - **transcript**: one HTML file per thread, ready to publish as an Artifact.
 - **`SessionEnd` hook**: closing the window closes your live spochies.
+- **the Claude on the side**: one `claude -p` per accepted spochie, read-only, in the
+  repo that matters, so your own session stays yours.
 
 ## What it's for
 
@@ -166,6 +168,22 @@ Parts:
   Claude knows because it's in their `.env.example`. Yours doesn't.
 - **A thread that stays.** The whole exchange is in Slack for the people and in an HTML
   transcript to read end to end.
+
+## The Claude on the side
+
+A spochie that lands in the session you are working in smears someone else's
+conversation over your screen. So by default it doesn't: your session only gets the
+opening notice and the accept prompt. Once you accept (in Slack or with
+`spochie accept`), the daemon starts a `claude -p` of its own in that repo, feeds it the
+thread, and every later turn goes there. It can read the repo and run read-only git; it
+cannot write files, cannot accept or release anything, and it dies when the spochie
+closes. You watch the whole exchange in the Slack thread and the transcript, and you can
+step in from the thread or with `spochie say` from any session.
+
+- `spochie take <id>` from a session picks the repo the side Claude runs in.
+- `--aqui` on `accept` or `take` keeps the old behaviour: that session answers itself.
+- `spochie config --aparte off` turns the side Claude off for good.
+- Its output goes to `~/.claude/spochie/aparte/<id>.log`.
 
 ## Usage
 
@@ -322,7 +340,7 @@ arrive and nobody notices.
 ## Development
 
 ```
-bun test                                # 90 tests, no network
+bun test                                # 95 tests, no network
 SPOCHIE_HOME=/tmp/x bun run src/daemon.ts
 ```
 
@@ -341,6 +359,7 @@ src/
   firma.ts      ed25519 signatures, keys pinned on first sight
   guardian.ts   the receiving-side judge
   arranque.ts   how the daemon starts: launchd, heartbeat, compiled or not
+  aparte.ts     the Claude on the side: what it may run, its first turn
   selftest.ts   the whole loop, locally
   doctor.ts     what has to be right
 commands/       /spochie and /spochie:join

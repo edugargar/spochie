@@ -71,7 +71,7 @@ export async function selftest(): Promise<Paso[]> {
         { mode: 0o600 },
       );
     }
-    writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, human: "prueba" }), { mode: 0o600 });
+    writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "prueba" }), { mode: 0o600 });
 
     const { comandoDemonio } = await import("./arranque.ts");
     const [cmd, ...args] = comandoDemonio();

@@ -61,7 +61,7 @@ afterAll(() => { daemon?.kill(); A.server.close(); B.server.close(); });
 
 test("ciclo completo: abrir, puerta de aprobacion, hablar y cerrar", async () => {
   // El vigilante llama a un modelo; en un test no queremos ni red ni coste.
-  Cfg.save({ guardian: false, transcript: false, human: "Edu" });
+  Cfg.save({ guardian: false, transcript: false, aparte: false, human: "Edu" });
   register({ sessionId: "A", name: "repo-a", cwd: "/repo/a", socket: A.sock, token: "ta", pid: process.pid, startedAt: 1 });
   register({ sessionId: "B", name: "repo-b", cwd: "/repo/b", socket: B.sock, token: "tb", pid: process.pid, startedAt: 2 });
 

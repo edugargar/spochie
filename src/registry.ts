@@ -10,6 +10,8 @@ export type SessionRecord = {
   token: string;
   pid: number;
   startedAt: number;
+  /** Si es un Claude aparte, el id del spochie que atiende. No se le asigna otro. */
+  aparte?: string;
 };
 
 /** El id acaba siendo un nombre de fichero. Cuando el hook no trae session_id se
