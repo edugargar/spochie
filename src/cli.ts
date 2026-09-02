@@ -103,7 +103,9 @@ const USAGE = `spochie - tunel entre sesiones de Claude Code de personas distint
   spochie transcript <id> [--url <url-del-artifact>]
   spochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
   spochie doctor                        repasa lo que tiene que estar bien para entregar
-  spochie config [--human "Edu"] [--guardian on|off] [--transcript on|off]
+  spochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off]
+      aparte: los spochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
+  spochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
 
   Alta de otra persona, en un pegado:
   spochie invite --to <U0..|email> [--name Alex]   el bot le manda la invitacion por DM, con los pasos
@@ -144,6 +146,7 @@ async function main() {
       // Verificado en 2.1.251. Senal de vida exacta, sin depender del arbol de procesos.
       pid: Number(socket.split("/").pop()!.replace(/\.sock$/, "")) || process.ppid,
       startedAt: Date.now(),
+      ...(process.env.SPOCHIE_APARTE ? { aparte: process.env.SPOCHIE_APARTE } : {}),
     });
     // En macOS el demonio pasa a launchd, que lo mantiene vivo y lo levanta al
     // arrancar. Se hace aqui, en cada arranque de sesion, porque la ruta del plugin
@@ -170,6 +173,7 @@ async function main() {
     if (flag(rest, "human")) c.human = flag(rest, "human");
     if (flag(rest, "guardian")) c.guardian = flag(rest, "guardian") === "on";
     if (flag(rest, "transcript")) c.transcript = flag(rest, "transcript") === "on";
+    if (flag(rest, "aparte")) c.aparte = flag(rest, "aparte") === "on";
     Cfg.save(c);
     console.log(JSON.stringify({
       ...c,
@@ -224,7 +228,7 @@ async function main() {
         console.error(`no se a quien mandarsela: pasa su id de Slack, --to U01234567 (esta en su perfil, "Copiar id de miembro").`);
         process.exit(1); return;
       }
-      const blob = crearInvitacion({ b: bot, t: quien.team, u: dest.id, i: yo });
+      const blob = crearInvitacion({ b: bot, t: quien.team, u: dest.id, n: dest.name, i: yo });
       const im = await api("conversations.open", { users: dest.id });
       if (!im.ok) { console.error(`no puedo abrir el DM con ${dest.name}: ${im.error}`); process.exit(1); return; }
       const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name) });
@@ -289,7 +293,9 @@ async function main() {
 
     const c = Cfg.load();
     c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
-    if (!c.human) c.human = flag(rest, "nombre") ?? userInfo().username;
+    // El nombre: el que diga --nombre, el que puso quien invita, y si no el usuario del
+    // sistema (que en la primera prueba real salio como "acme" en todo el hilo).
+    if (!c.human || c.human === userInfo().username) c.human = flag(rest, "nombre") ?? datos.n ?? c.human ?? userInfo().username;
     if (datos.i) Cfg.addContact(c, datos.i);
     const { misClaves } = await import("./firma.ts");
     misClaves(c);
@@ -382,19 +388,21 @@ async function main() {
       break;
     }
     case "take":
-      out(await rpc({ op: "take", sessionId: whoAmI().sessionId, id: rest[0] }));
+      out(await rpc({ op: "take", sessionId: whoAmI().sessionId, id: rest[0], aqui: has(rest, "aqui") }));
       break;
     case "accept":
-      out(await rpc({ op: "accept", sessionId: whoAmI().sessionId, id: rest[0], by: Cfg.load().human }));
+      out(await rpc({ op: "accept", sessionId: whoAmI().sessionId, id: rest[0], by: Cfg.load().human, aqui: has(rest, "aqui") }));
       break;
     case "say": {
       const me = whoAmI();
       const id = rest[0];
       const f = flag(rest, "file");
+      // El texto es el primer argumento que no es una bandera. Antes rest[1] a secas,
+      // y un `say <id> --human` sin texto mandaba "--human" como mensaje.
       const text = f
         ? (f === "-" ? await new Response(Bun.stdin.stream()).text() : readFileSync(rpath(f), "utf8"))
-        : rest[1];
-      if (!id || !text) { console.error("faltan argumentos\n" + USAGE); process.exit(2); }
+        : rest.slice(1).find(a => !a.startsWith("--"));
+      if (!id || !text?.trim()) { console.error("falta el texto del mensaje\n" + USAGE); process.exit(2); }
       if (text.length > MAX_MENSAJE) { console.error(`el mensaje pasa de ${MAX_MENSAJE} caracteres (${text.length}). Cortalo tu o manda un parche.`); process.exit(2); }
       out(await rpc({ op: "say", sessionId: me.sessionId, id, text, files: fileList(rest), author: has(args(rest, 2), "human") ? "human" : "claude" }));
       break;
