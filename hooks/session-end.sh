@@ -1,3 +1,4 @@
 #!/bin/sh
 # Cerrar la pantalla cierra tus spochies vivos.
-exec bun run "$(dirname "$0")/../src/cli.ts" unregister
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+"$ROOT/bin/spochie" unregister 2>/dev/null || true

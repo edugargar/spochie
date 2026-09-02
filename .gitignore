@@ -7,3 +7,4 @@ PARA-ALEX.md
 .playwright-mcp/
 *.png
 !docs/*.png
+dist/

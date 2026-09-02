@@ -5,7 +5,7 @@ description: Join spochie with the invitation a teammate sent you
 El usuario se esta dando de alta en spochie. Ha pegado la invitacion que le ha mandado
 un companero. Haz esto, en orden, y cuentale el resultado en dos o tres frases.
 
-`spochie` = `bun run ${CLAUDE_PLUGIN_ROOT}/src/cli.ts`
+`spochie` = `sh ${CLAUDE_PLUGIN_ROOT}/bin/spochie`
 
 ## Lo que ha pegado
 

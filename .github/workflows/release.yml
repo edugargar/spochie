@@ -1,0 +1,27 @@
+# Builds one self-contained binary per platform and attaches them to the release,
+# so the SessionStart hook can fetch one when Bun is not installed.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: bun test
+      - name: compile
+        run: |
+          mkdir -p dist
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            bun build --compile --target=bun-$t src/cli.ts --outfile dist/spochie-$t
+          done
+          ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/spochie-*
+          generate_release_notes: true

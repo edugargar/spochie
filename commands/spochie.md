@@ -4,7 +4,7 @@ description: Open or manage a spochie tunnel with another person's Claude
 
 Usa la CLI de spochie para hablar con la sesion de Claude de otra persona.
 
-`spochie` = `bun run ${CLAUDE_PLUGIN_ROOT}/src/cli.ts`
+`spochie` = `sh ${CLAUDE_PLUGIN_ROOT}/bin/spochie`
 
 ## Lo que ha pedido el usuario
 
