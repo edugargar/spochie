@@ -11,7 +11,7 @@ import type { SessionRecord } from "./registry.ts";
  * The auth line is optional on macOS/Linux, but sending the target session's own
  * token is what makes Claude Code verify the message as coming from that session's
  * own child. Without it a bypassPermissions session holds every message for manual
- * approval, which would put a dialog in front of every single turn of a spochie.
+ * approval, which would put a dialog in front of every single turn of a spoochie.
  *
  * Claude Code closes a connection that sends no complete line within its deadline,
  * so we only connect once the text is ready.

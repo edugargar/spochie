@@ -34,7 +34,7 @@ test("entrega la linea de auth y luego el turno de usuario, en ese orden", async
 
 test("un socket que no existe falla, no se cuelga", async () => {
   await expect(deliver(
-    { sessionId: "X", name: "x", cwd: "/tmp", socket: "/tmp/no-existe-spochie.sock", token: "t", pid: 1, startedAt: 0 },
+    { sessionId: "X", name: "x", cwd: "/tmp", socket: "/tmp/no-existe-spoochie.sock", token: "t", pid: 1, startedAt: 0 },
     "hola",
   )).rejects.toThrow();
 });

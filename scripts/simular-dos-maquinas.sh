@@ -1,13 +1,13 @@
 #!/bin/bash
 # Simula dos personas en dos maquinas usando la misma cuenta de Slack.
 #
-# Cada "maquina" es un SPOCHIE_HOME distinto: su propio demonio, su propio registro
+# Cada "maquina" es un SPOOCHIE_HOME distinto: su propio demonio, su propio registro
 # de sesiones y su propia identidad de Slack. No comparten nada en disco, asi que
 # lo unico que las une es el hilo de Slack, igual que dos portatiles de verdad.
 #
 # La ficcion: la "maquina A" dice ser el usuario bot de la app. Es un id de Slack
 # distinto del tuyo, que es lo unico que el descubrimiento necesita para no
-# confundir un spochie propio con uno ajeno.
+# confundir un spoochie propio con uno ajeno.
 #
 #   ./scripts/simular-dos-maquinas.sh up      levanta las dos con dos sesiones de Claude
 #   ./scripts/simular-dos-maquinas.sh a "..."  habla con la sesion de la maquina A
@@ -16,14 +16,14 @@
 #   ./scripts/simular-dos-maquinas.sh down    lo tira todo abajo
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LAB="${SPOCHIE_LAB:-/tmp/spochie-lab}"
-TOKENS="${SPOCHIE_TOKEN_FILE:?exporta SPOCHIE_TOKEN_FILE con la ruta del JSON de tokens de tu app}"
+LAB="${SPOOCHIE_LAB:-/tmp/spoochie-lab}"
+TOKENS="${SPOOCHIE_TOKEN_FILE:?exporta SPOOCHIE_TOKEN_FILE con la ruta del JSON de tokens de tu app}"
 
 # A finge ser el usuario bot; B eres tu.
-A_USER="${SPOCHIE_A_USER:-}"
-B_USER="${SPOCHIE_B_USER:-}"
+A_USER="${SPOOCHIE_A_USER:-}"
+B_USER="${SPOOCHIE_B_USER:-}"
 
-maquina() { # nombre, spochie_home, slack_user_id, humano
+maquina() { # nombre, spoochie_home, slack_user_id, humano
   mkdir -p "$2"
   python3 - "$2/config.json" "$3" "$4" "$TOKENS" <<'PY'
 import json,sys
@@ -35,7 +35,7 @@ PY
 }
 
 # Codigo de ejemplo: cada maquina tiene su mitad del problema y ninguna ve la del otro,
-# que es la situacion que spochie existe para resolver.
+# que es la situacion que spoochie existe para resolver.
 fixtures() {
   mkdir -p "$LAB/repo-a/src" "$LAB/repo-b/src"
   cat > "$LAB/repo-a/src/Modal.tsx" <<'TSX'
@@ -73,15 +73,15 @@ TS
   (cd "$LAB/repo-b" && git init -q && git add -A && git commit -qm hook && git checkout -q -b feat/guardar-perfil)
 }
 
-sesion() { # nombre, spochie_home, dir
+sesion() { # nombre, spoochie_home, dir
   mkdir -p "$3" "$LAB/$1"
   rm -f "$LAB/$1.fifo"; mkfifo "$LAB/$1.fifo"
   nohup sh -c "exec sleep 100000 > $LAB/$1.fifo" >/dev/null 2>&1 &
   sleep 0.3
-  SPOCHIE_HOME="$2" nohup sh -c "cd $3 && exec claude -p --verbose \
+  SPOOCHIE_HOME="$2" nohup sh -c "cd $3 && exec claude -p --verbose \
     --input-format stream-json --output-format stream-json \
     --settings '{\"crossSessionInbound\":\"accept\"}' \
-    --dangerously-skip-permissions --name spochie-$1 \
+    --dangerously-skip-permissions --name spoochie-$1 \
     < $LAB/$1.fifo > $LAB/$1.out 2> $LAB/$1.err" >/dev/null 2>&1 &
 }
 
@@ -89,7 +89,7 @@ decir() { python3 -c 'import json,sys; print(json.dumps({"type":"user","message"
 
 case "${1:-}" in
   up)
-    [ -n "$A_USER" ] && [ -n "$B_USER" ] || { echo "Faltan SPOCHIE_A_USER y SPOCHIE_B_USER (ids de Slack)"; exit 2; }
+    [ -n "$A_USER" ] && [ -n "$B_USER" ] || { echo "Faltan SPOOCHIE_A_USER y SPOOCHIE_B_USER (ids de Slack)"; exit 2; }
     "$0" down >/dev/null 2>&1 || true
     rm -rf "$LAB"; mkdir -p "$LAB"
     fixtures
@@ -114,8 +114,8 @@ for line in reversed(open(sys.argv[1]).read().splitlines()):
 PY
     ;;
   down)
-    pkill -f 'name spochie-a' 2>/dev/null || true
-    pkill -f 'name spochie-b' 2>/dev/null || true
+    pkill -f 'name spoochie-a' 2>/dev/null || true
+    pkill -f 'name spoochie-b' 2>/dev/null || true
     pkill -f 'sleep 100000' 2>/dev/null || true
     for h in "$LAB/home-a" "$LAB/home-b"; do
       [ -f "$h/daemon.pid" ] && kill "$(cat "$h/daemon.pid")" 2>/dev/null || true

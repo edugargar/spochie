@@ -47,18 +47,18 @@ async function ensureDaemon() {
 
 /** Quien soy: la sesion cuyo socket de entrada es el que me han exportado a mi. */
 function whoAmI(): SessionRecord {
-  // Dentro de un Claude aparte la CLI se reconoce por el spochie que atiende: el
+  // Dentro de un Claude aparte la CLI se reconoce por el spoochie que atiende: el
   // registro lo escribio el demonio al lanzarlo, y no lleva socket.
-  if (process.env.SPOCHIE_APARTE) {
-    const sid = process.env.SPOCHIE_APARTE_SESION;
-    const ap = liveSessions().find(s => sid ? s.sessionId === sid : s.aparte === process.env.SPOCHIE_APARTE);
+  if (process.env.SPOOCHIE_APARTE) {
+    const sid = process.env.SPOOCHIE_APARTE_SESION;
+    const ap = liveSessions().find(s => sid ? s.sessionId === sid : s.aparte === process.env.SPOOCHIE_APARTE);
     if (ap) return ap;
-    throw new Error(`este Claude aparte (spochie ${process.env.SPOCHIE_APARTE}) ya no esta registrado`);
+    throw new Error(`este Claude aparte (spoochie ${process.env.SPOOCHIE_APARTE}) ya no esta registrado`);
   }
   const sock = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
   if (!sock) throw new Error("no hay CLAUDE_CODE_MESSAGING_SOCKET: esto tiene que correr dentro de una sesion de Claude Code");
   const me = liveSessions().find(s => s.socket === sock);
-  if (!me) throw new Error("esta sesion no esta registrada; hace falta el hook SessionStart de spochie (y reiniciar la sesion)");
+  if (!me) throw new Error("esta sesion no esta registrada; hace falta el hook SessionStart de spoochie (y reiniciar la sesion)");
   return me;
 }
 
@@ -87,43 +87,43 @@ const has = (a: string[], n: string) => a.includes(`--${n}`);
 const fileList = (a: string[]) => flag(a, "files")?.split(",").map(f => rpath(f.trim())).filter(Boolean);
 
 function out(r: any) {
-  if (r?.ok === false) { console.error(`spochie: ${r.error}`); if (r.candidates) for (const c of r.candidates) console.error(`  - ${c}`); process.exit(1); }
+  if (r?.ok === false) { console.error(`spoochie: ${r.error}`); if (r.candidates) for (const c of r.candidates) console.error(`  - ${c}`); process.exit(1); }
   console.log(JSON.stringify(r, null, 2));
 }
 
-const USAGE = `spochie - tunel entre sesiones de Claude Code de personas distintas
+const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distintas
 
-  spochie sessions                          sesiones vivas en esta maquina
-  spochie open <destino> --subject "..." --body "..." [--files a,b]
+  spoochie sessions                          sesiones vivas en esta maquina
+  spoochie open <destino> --subject "..." --body "..." [--files a,b]
       destino: nombre de sesion local, o @persona para otra maquina (via Slack)
-  spochie take <id>                         quedarte un spochie cuando tienes varias sesiones
-  spochie accept <id>                       LO EJECUTA EL HUMANO RECEPTOR, no su Claude
-  spochie say <id> "<texto>" [--files a,b]
+  spoochie take <id>                         quedarte un spoochie cuando tienes varias sesiones
+  spoochie accept <id>                       LO EJECUTA EL HUMANO RECEPTOR, no su Claude
+  spoochie say <id> "<texto>" [--files a,b]
       --human  SOLO si estas transcribiendo palabras literales de tu usuario.
                Lo que escribas tu va sin bandera: se firma como su Claude.
-  spochie say <id> --file <ruta|->      para textos largos, sin pelearte con las comillas
-  spochie patch <id> [--diff-file f | --from-git]
-  spochie branch <id> <nombre-de-rama>
-  spochie release <id> | discard <id>   LO EJECUTA EL HUMANO RECEPTOR: suelta o tira lo que retuvo el vigilante
-  spochie close <id> [--reason "..."]
-  spochie list | show <id>
-  spochie search "<texto>"              busca entre los spochies de esta maquina
-  spochie transcript <id> [--url <url-del-artifact>]
-  spochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
-  spochie doctor                        repasa lo que tiene que estar bien para entregar
-  spochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off]
-      aparte: los spochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
-  spochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
+  spoochie say <id> --file <ruta|->      para textos largos, sin pelearte con las comillas
+  spoochie patch <id> [--diff-file f | --from-git]
+  spoochie branch <id> <nombre-de-rama>
+  spoochie release <id> | discard <id>   LO EJECUTA EL HUMANO RECEPTOR: suelta o tira lo que retuvo el vigilante
+  spoochie close <id> [--reason "..."]
+  spoochie list | show <id>
+  spoochie search "<texto>"              busca entre los spoochies de esta maquina
+  spoochie transcript <id> [--url <url-del-artifact>]
+  spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
+  spoochie doctor                        repasa lo que tiene que estar bien para entregar
+  spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off]
+      aparte: los spoochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
+  spoochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
 
   Alta de otra persona, en un pegado:
-  spochie invite --to <U0..|email> [--name Alex]   el bot le manda la invitacion por DM, con los pasos
-  spochie invite                        o imprime la linea para mandarsela tu
-  spochie join <cadena> [--email <mail>] la que ejecuta quien se da de alta
+  spoochie invite --to <U0..|email> [--name Alex]   el bot le manda la invitacion por DM, con los pasos
+  spoochie invite                        o imprime la linea para mandarsela tu
+  spoochie join <cadena> [--email <mail>] la que ejecuta quien se da de alta
       (el email sale de git config si no lo pasas; pega la linea entera, se limpia sola)
 
   Alta a mano, si prefieres los tokens uno a uno:
-  spochie slack setup --token xoxp-... --bot-token xoxb-...
-  spochie slack setup --token-file <ruta.json>     |   spochie slack off
+  spoochie slack setup --token xoxp-... --bot-token xoxb-...
+  spoochie slack setup --token-file <ruta.json>     |   spoochie slack off
 `;
 
 async function main() {
@@ -141,18 +141,18 @@ async function main() {
     const ev = raw.trim() ? JSON.parse(raw) : {};
     const socket = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
     const token = process.env.CLAUDE_CODE_MESSAGING_TOKEN;
-    if (!socket || !token) { console.error("spochie: esta sesion no tiene buzon; no registro"); return; }
+    if (!socket || !token) { console.error("spoochie: esta sesion no tiene buzon; no registro"); return; }
     const cwd: string = ev.cwd ?? process.cwd();
     // La ventana de un Claude aparte: sustituye el registro provisional que dejo el
     // demonio por uno con socket, y el demonio le entrega lo que tenia guardado. No
-    // reclama spochies ni toca launchd. Lo que se imprime entra en su contexto.
-    if (process.env.SPOCHIE_APARTE) {
-      const id = process.env.SPOCHIE_APARTE;
+    // reclama spoochies ni toca launchd. Lo que se imprime entra en su contexto.
+    if (process.env.SPOOCHIE_APARTE) {
+      const id = process.env.SPOOCHIE_APARTE;
       register({
-        sessionId: process.env.SPOCHIE_APARTE_SESION ?? `aparte-${id}`, name: `aparte-${id}`, cwd, socket, token,
+        sessionId: process.env.SPOOCHIE_APARTE_SESION ?? `aparte-${id}`, name: `aparte-${id}`, cwd, socket, token,
         pid: Number(socket.split("/").pop()!.replace(/\.sock$/, "")) || process.ppid, startedAt: Date.now(), aparte: id,
       });
-      console.log(`spochie: esta ventana es el Claude aparte del spochie ${id}. El primer turno llega ahora por el tunel.`);
+      console.log(`spoochie: esta ventana es el Claude aparte del spoochie ${id}. El primer turno llega ahora por el tunel.`);
       return;
     }
     const sessionId: string = ev.session_id ?? socket;
@@ -170,7 +170,7 @@ async function main() {
     // En macOS el demonio pasa a launchd, que lo mantiene vivo y lo levanta al
     // arrancar. Se hace aqui, en cada arranque de sesion, porque la ruta del plugin
     // cambia con cada version y el plist tiene que seguirla.
-    try { const { instalarLaunchd } = await import("./arranque.ts"); const r = instalarLaunchd(); if (r !== "igual" && r !== "no") console.error(`spochie: demonio ${r} en launchd`); } catch {}
+    try { const { instalarLaunchd } = await import("./arranque.ts"); const r = instalarLaunchd(); if (r !== "igual" && r !== "no") console.error(`spoochie: demonio ${r} en launchd`); } catch {}
     await ensureDaemon();
     try { await rpc({ op: "claim", sessionId }, 5000); } catch {}
     return;
@@ -180,7 +180,7 @@ async function main() {
     const raw = await new Response(Bun.stdin.stream()).text().catch(() => "{}");
     const ev = raw.trim() ? JSON.parse(raw) : {};
     const sock = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
-    const id = process.env.SPOCHIE_APARTE_SESION ?? ev.session_id ?? liveSessions().find(s => s.socket === sock)?.sessionId;
+    const id = process.env.SPOOCHIE_APARTE_SESION ?? ev.session_id ?? liveSessions().find(s => s.socket === sock)?.sessionId;
     if (!id) return;
     try { await rpc({ op: "session-end", sessionId: id }, 5000); } catch {}
     unregister(id);
@@ -235,7 +235,7 @@ async function main() {
         // Sin users:read el nombre no se puede sacar de Slack; --name lo pone quien invita.
         const r = await api("users.info", { user: to });
         const nombre = flag(rest, "name") ?? (r.ok ? (r.user?.profile?.real_name ?? r.user?.name) : undefined);
-        if (!nombre) { console.error(`la app no puede leer el nombre de ${to}; dimelo tu:  spochie invite --to ${to} --name Alex`); process.exit(1); return; }
+        if (!nombre) { console.error(`la app no puede leer el nombre de ${to}; dimelo tu:  spoochie invite --to ${to} --name Alex`); process.exit(1); return; }
         dest = { id: to, name: nombre };
       }
       if (!dest && to.includes("@")) {
@@ -260,11 +260,11 @@ async function main() {
     const r = await api("users.list", { limit: 1 });
     const blob = crearInvitacion({ b: bot, t: quien.team, i: yo });
     console.log(`Mandale esto a quien quieras dar de alta. Es una linea:\n`);
-    console.log(`  /spochie:join ${blob}\n`);
+    console.log(`  /spoochie:join ${blob}\n`);
     if (r.ok) console.log(`Su email lo saca de git; si no cuadra con Slack, que anada --email <mail>.`);
     else {
       console.log(`Ojo: la app no tiene users:read de bot, asi que tendra que anadir --user <su id de Slack>.`);
-      console.log(`Mas facil: spochie invite --to <su id>, y el bot le manda la invitacion ya resuelta por DM.`);
+      console.log(`Mas facil: spoochie invite --to <su id>, y el bot le manda la invitacion ya resuelta por DM.`);
     }
     return;
   }
@@ -272,15 +272,15 @@ async function main() {
   if (cmd === "join") {
     const { limpiarCadena, leerInvitacion, emailDeGit } = await import("./alta.ts");
     // Se limpia todo lo pegado, no solo rest[0]: quien se da de alta pega la linea
-    // entera tal cual se la mandaron, con "spochie join" delante y comillas de Slack.
+    // entera tal cual se la mandaron, con "spoochie join" delante y comillas de Slack.
     const blob = limpiarCadena(rest.join(" "));
     if (!blob) {
       console.error("no veo ninguna invitacion en lo que has pegado.");
-      console.error("Pidele a quien te da de alta que corra `spochie invite` y mandarte la linea entera.");
+      console.error("Pidele a quien te da de alta que corra `spoochie invite` y mandarte la linea entera.");
       process.exit(2); return;
     }
     const datos = leerInvitacion(blob);
-    if (!datos) { console.error("esa cadena no es una invitacion de spochie"); process.exit(2); return; }
+    if (!datos) { console.error("esa cadena no es una invitacion de spoochie"); process.exit(2); return; }
 
     const { whoIs } = await import("./slack.ts");
     const bot = await whoIs(datos.b);
@@ -299,11 +299,11 @@ async function main() {
         // users:read de bot. Culparle del email le manda a mirar donde no esta el fallo.
         console.error(`la app de Slack no puede buscar personas (falta users:read de bot). Eso lo arregla quien te invita.`);
         console.error(`Mientras tanto, pasa tu id de Slack, que esta en tu perfil ("Copiar id de miembro"):`);
-        console.error(`  spochie join <cadena> --user U01234567`);
+        console.error(`  spoochie join <cadena> --user U01234567`);
         process.exit(1);
       } else {
         console.error(`no te encuentro en Slack como ${email} (${j.error}).`);
-        console.error(`Pasa el email con el que entras en Slack:  spochie join <cadena> --email <mail>`);
+        console.error(`Pasa el email con el que entras en Slack:  spoochie join <cadena> --email <mail>`);
         console.error(`O tu id, que esta en tu perfil de Slack ("Copiar id de miembro"):  --user U01234567`);
         process.exit(1);
       }
@@ -334,7 +334,7 @@ async function main() {
       if (!p.ok) malos++;
       console.log(`${p.ok ? "  ok " : "FALLO"}  ${p.que.padEnd(38)} ${p.detalle}`);
     }
-    console.log(malos ? `\n${malos} fallos: spochie no esta listo.` : "\nTodo bien. spochie entrega en esta maquina.");
+    console.log(malos ? `\n${malos} fallos: spoochie no esta listo.` : "\nTodo bien. spoochie entrega en esta maquina.");
     process.exit(malos ? 1 : 0);
   }
 
@@ -355,7 +355,7 @@ async function main() {
         if (!token) { console.error(`${tokenFile} no tiene la clave "${tokenKey}"`); process.exit(1); }
       }
       if (!token || !botToken) {
-        console.error("spochie necesita dos tokens de la misma app de Slack:");
+        console.error("spoochie necesita dos tokens de la misma app de Slack:");
         console.error("  --token xoxp-...      el tuyo, de usuario. Solo se usa para buscar personas.");
         console.error("  --bot-token xoxb-...  el de la app. Postea y lee los hilos.");
         console.error("O los dos de un fichero:  --token-file <ruta.json>");
@@ -402,7 +402,7 @@ async function main() {
       if (r?.ok && Cfg.load().transcript) {
         console.log(`\nSIGUIENTE PASO, hazlo ahora: publica ${join(TRANSCRIPTS_DIR, `${r.id}.html`)} con la herramienta Artifact`);
         console.log(`y despues registra la URL para que aparezca en el hilo de Slack:`);
-        console.log(`  spochie transcript ${r.id} --url <url>`);
+        console.log(`  spoochie transcript ${r.id} --url <url>`);
       }
       break;
     }
@@ -412,8 +412,8 @@ async function main() {
       out(r);
       if (r?.ok && r.aparte) {
         console.log(r.ventana
-          ? `Lo atiende un Claude aparte en una VENTANA NUEVA de la terminal, en ${r.aparte}. A esta sesion no le llega nada mas del spochie: no hagas nada, sigue con lo tuyo.`
-          : `Lo atiende un Claude aparte en segundo plano en ${r.aparte}. A esta sesion no le llega nada mas del spochie. Se ve en Slack y con  spochie show ${rest[0]}.`);
+          ? `Lo atiende un Claude aparte en una VENTANA NUEVA de la terminal, en ${r.aparte}. A esta sesion no le llega nada mas del spoochie: no hagas nada, sigue con lo tuyo.`
+          : `Lo atiende un Claude aparte en segundo plano en ${r.aparte}. A esta sesion no le llega nada mas del spoochie. Se ve en Slack y con  spoochie show ${rest[0]}.`);
       }
       break;
     }
@@ -441,7 +441,7 @@ async function main() {
       // transcript" que el otro lado no puede aplicar. Mejor decirlo aqui.
       if (diff.length > MAX_PARCHE) {
         console.error(`el parche son ${diff.length} caracteres y por el tunel caben ${MAX_PARCHE}.`);
-        console.error(`Empuja la rama y mandala:  spochie branch ${id ?? "<id>"} <rama>`);
+        console.error(`Empuja la rama y mandala:  spoochie branch ${id ?? "<id>"} <rama>`);
         process.exit(2);
       }
       out(await rpc({ op: "say", sessionId: me.sessionId, id, text: diff, kind: "patch" }));
@@ -461,7 +461,7 @@ async function main() {
       let sessionId: string | undefined;
       try { sessionId = whoAmI().sessionId; } catch {}
       const r = await rpc({ op: "list", sessionId });
-      if (!r.threads.length) { console.log("(ningun spochie)"); break; }
+      if (!r.threads.length) { console.log("(ningun spoochie)"); break; }
       for (const t of r.threads)
         console.log(`${t.id}  ${t.state.padEnd(8)} ${t.from} -> ${t.to}  "${t.subject}"  (${t.messages} msg, caduca en ${t.expiresInSec}s)${t.transcript ? `  ${t.transcript}` : ""}`);
       break;
@@ -474,7 +474,7 @@ async function main() {
         if (!p.ok) malos++;
         console.log(`${p.ok ? "  ok " : "FALLO"}  ${p.que.padEnd(38)} ${p.detalle}`);
       }
-      console.log(malos ? `\n${malos} fallos: spochie no esta listo.` : "\nTodo bien. spochie entrega en esta maquina.");
+      console.log(malos ? `\n${malos} fallos: spoochie no esta listo.` : "\nTodo bien. spoochie entrega en esta maquina.");
       if (malos) process.exit(1);
       break;
     }
@@ -510,9 +510,9 @@ async function main() {
       const url = flag(rest, "url");
       if (url) { out(await rpc({ op: "transcript-url", id, url, sessionId: whoAmI().sessionId })); break; }
       const p = join(TRANSCRIPTS_DIR, `${id}.html`);
-      if (!existsSync(p)) { console.error(`no hay transcript para ${id} (activa con: spochie config --transcript on)`); process.exit(1); }
+      if (!existsSync(p)) { console.error(`no hay transcript para ${id} (activa con: spoochie config --transcript on)`); process.exit(1); }
       console.log(p);
-      console.log(`Publicalo con la herramienta Artifact y guarda la URL:  spochie transcript ${id} --url <url>`);
+      console.log(`Publicalo con la herramienta Artifact y guarda la URL:  spoochie transcript ${id} --url <url>`);
       break;
     }
     default:
@@ -520,4 +520,4 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(`spochie: ${e.message}`); process.exit(1); });
+main().catch(e => { console.error(`spoochie: ${e.message}`); process.exit(1); });

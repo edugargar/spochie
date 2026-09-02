@@ -5,10 +5,10 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** Casa propia para este demonio. La suite comparte SPOCHIE_HOME entre ficheros, y
+/** Casa propia para este demonio. La suite comparte SPOOCHIE_HOME entre ficheros, y
  *  este test enciende el vigilante: si esa config se colara en los demas, sus
  *  demonios llamarian a Haiku de verdad y fallarian segun el orden. */
-const HOME = mkdtempSync(join(tmpdir(), "spochie-vig-"));
+const HOME = mkdtempSync(join(tmpdir(), "spoochie-vig-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
 
 /** Un buzon falso: hace de sesion de Claude y apunta lo que le entregan. */
@@ -69,7 +69,7 @@ esac
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: HOME }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);

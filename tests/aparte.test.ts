@@ -11,7 +11,7 @@ import { herramientasPermitidas, primerTurno } from "../src/aparte.ts";
  * cada turno que le entra por stdin. Con eso se prueba el reparto: el aparte recibe la
  * conversacion, la sesion interactiva solo el aviso. El registro lo hace el demonio.
  */
-const HOME = mkdtempSync(join(tmpdir(), "spochie-ap-"));
+const HOME = mkdtempSync(join(tmpdir(), "spoochie-ap-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
 const RECIBIDO = join(HOME, "aparte-recibido.txt");
 // Directorios de verdad: el aparte se lanza con cwd ahi, y un cwd que no existe es ENOENT.
@@ -52,9 +52,9 @@ let daemon: ChildProcess;
 afterAll(() => { daemon?.kill(); A.server.close(); B.server.close(); });
 
 test("el aparte solo puede leer, hablar por el tunel y cerrar", () => {
-  const h = herramientasPermitidas("/x/spochie");
+  const h = herramientasPermitidas("/x/spoochie");
   expect(h).toContain("Read");
-  expect(h).toContain("Bash(/x/spochie say:*)");
+  expect(h).toContain("Bash(/x/spoochie say:*)");
   expect(h).toContain("Bash(git diff:*)");
   expect(h).not.toContain("Bash(git branch:*)");
   expect(h).toContain("Bash(git branch --list:*)");
@@ -65,7 +65,7 @@ test("al aceptar, la conversacion va al Claude aparte y la sesion solo recibe el
   const bin = mkdtempSync(join(tmpdir(), "sp-claude-ap-"));
   writeFileSync(join(bin, "claude"), `#!/bin/sh
 # El registro lo hace el demonio al lanzarlo. Aqui solo se apunta lo que entra por stdin.
-while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-recibido.txt"; done
+while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-recibido.txt"; done
 `);
 
   chmodSync(join(bin, "claude"), 0o755);
@@ -78,7 +78,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-reci
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: HOME, SPOCHIE_VENTANA: "fondo" }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
@@ -86,7 +86,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-reci
   const open = await rpc({ op: "open", sessionId: "PA", to: "repo-pb", subject: "el boton", body: "mira tu Button" });
   expect(open.ok).toBe(true);
   // La invitacion si entra en la sesion: es el humano quien acepta.
-  expect(await hasta(() => B.got.some(x => x.includes(`spochie accept ${open.id}`)))).toBe(true);
+  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
 
   const antes = B.got.length;
   const acc = await rpc({ op: "accept", sessionId: "PB", id: open.id, by: "Edu" });
@@ -111,12 +111,12 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-reci
   await sleep(300);
   expect(B.got.slice(antes)).toEqual([]);
 
-  // Un aparte nunca es candidato para otro spochie.
+  // Un aparte nunca es candidato para otro spoochie.
   const s = await rpc({ op: "sessions" });
   expect(s.sessions.find((x: any) => x.aparte === open.id)).toBeTruthy();
   const otro = await rpc({ op: "open", sessionId: "PA", to: "repo-pb", subject: "otro", body: "otra cosa" });
   expect(otro.ok).toBe(true);
-  expect(await hasta(() => B.got.some(x => x.includes(`spochie accept ${otro.id}`)))).toBe(true);
+  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${otro.id}`)))).toBe(true);
 
   // Cerrar avisa al aparte por el mismo camino.
   await rpc({ op: "close", sessionId: "PA", id: open.id, reason: "resuelto" });
@@ -126,8 +126,8 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-reci
 test("el primer turno lleva quien es, como contestar y lo dicho hasta ahora", () => {
   const t: any = { id: "z9", subject: "el boton", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "ap-z9", name: "aparte", cwd: "/b", human: "Edu" }, context: {}, state: "open",
     messages: [{ at: 1, from: "A", author: "claude", kind: "text", text: "mira tu Button" }, { at: 2, from: "A", author: "claude", kind: "text", text: "esto no", retenido: "si" }] };
-  const p = primerTurno(t, "ap-z9", "/x/spochie");
-  expect(p).toContain("/x/spochie say z9");
+  const p = primerTurno(t, "ap-z9", "/x/spoochie");
+  expect(p).toContain("/x/spoochie say z9");
   expect(p).toContain("mira tu Button");
   expect(p).not.toContain("esto no");
   expect(p).toContain("Ana");

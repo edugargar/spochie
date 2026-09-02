@@ -18,12 +18,12 @@ jobs:
         run: |
           mkdir -p dist
           for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-            bun build --compile --target=bun-$t src/cli.ts --outfile dist/spochie-$t
+            bun build --compile --target=bun-$t src/cli.ts --outfile dist/spoochie-$t
           done
-          (cd dist && sha256sum spochie-* > SHA256SUMS && cat SHA256SUMS)
+          (cd dist && sha256sum spoochie-* > SHA256SUMS && cat SHA256SUMS)
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/spochie-*
+            dist/spoochie-*
             dist/SHA256SUMS
           generate_release_notes: true

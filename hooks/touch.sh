@@ -5,6 +5,6 @@
 id=$(sed -n 's/.*"session_id" *: *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$id" ] || exit 0
 safe=$(printf '%s' "$id" | tr -c 'A-Za-z0-9._-\n' '_')
-f="${SPOCHIE_HOME:-$HOME/.claude/spochie}/sessions/$safe.json"
+f="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/sessions/$safe.json"
 [ -f "$f" ] && touch "$f"
 exit 0

@@ -23,7 +23,7 @@ import { SlackBridge } from "./slack.ts";
 import { repoMatches } from "./match.ts";
 
 /** Con un tick fijo de 20s, cada salto del tunel se comia hasta 20s de espera y una
- *  conversacion de 6 mensajes acumulaba dos minutos de nada. Mientras hay un spochie
+ *  conversacion de 6 mensajes acumulaba dos minutos de nada. Mientras hay un spoochie
  *  abierto se mira cada 4s; en reposo, cada 5s: el tick en si no llama a Slack, solo
  *  decide si toca descubrir (cadenciaDescubrir), asi que no cuesta nada. */
 const TICK_IDLE_MS = 5_000;
@@ -65,12 +65,12 @@ async function send(sess: SessionRecord | undefined, text: string) {
   catch (e) { log("deliver-failed", sess.sessionId, String(e)); return false; }
 }
 
-/** Los Claudes aparte vivos, por id de spochie. */
+/** Los Claudes aparte vivos, por id de spoochie. */
 const apartes = new Map<string, Ap.Aparte>();
 /** Lanzamientos en curso, para que dos accept/take a la vez no abran dos ventanas. */
 const atendiendo = new Map<string, Promise<SessionRecord | null>>();
 
-/** Lanza (o reutiliza) el Claude aparte de un spochie en ese directorio y se lo asigna. */
+/** Lanza (o reutiliza) el Claude aparte de un spoochie en ese directorio y se lo asigna. */
 function atender(t: T.Thread, cwd: string): Promise<SessionRecord | null> {
   const enCurso = atendiendo.get(t.id);
   if (enCurso) return enCurso;
@@ -104,11 +104,11 @@ async function esperarVentana(ap: Ap.Aparte, ms: number): Promise<SessionRecord 
   return undefined;
 }
 
-/** La ventana vieja se entera de que el spochie se ha ido a otro sitio. */
+/** La ventana vieja se entera de que el spoochie se ha ido a otro sitio. */
 async function despedir(ap: Ap.Aparte, porque: string) {
   if (ap.modo === "fondo") { Ap.matar(ap); return; }
   const real = Ap.registroVentana(ap, liveSessions());
-  if (real) { try { await deliver(real, `[spochie ${ap.id}] ${porque}. Esta ventana ya no atiende nada: puedes cerrarla.`); } catch {} }
+  if (real) { try { await deliver(real, `[spoochie ${ap.id}] ${porque}. Esta ventana ya no atiende nada: puedes cerrarla.`); } catch {} }
   unregister(ap.sess.sessionId);
 }
 
@@ -127,7 +127,7 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
     if (!ap) return null;
   }
 
-  // El spochie apunta al aparte desde ya: lo que llegue mientras arranca se le guarda
+  // El spoochie apunta al aparte desde ya: lo que llegue mientras arranca se le guarda
   // a el, no entra en la sesion donde trabaja la persona.
   const fresco = T.load(t.id) ?? t;
   fresco.to = { ...fresco.to, sessionId: ap.sess.sessionId, name: ap.sess.name, cwd, human: Cfg.load().human ?? fresco.to.human };
@@ -205,11 +205,11 @@ async function handle(req: Req): Promise<any> {
       const remote = typeof req.to === "string" && req.to.startsWith("@");
       let to: T.Side;
       if (remote) {
-        if (!slack) return { ok: false, error: "Slack no esta configurado: corre `spochie slack setup`" };
+        if (!slack) return { ok: false, error: "Slack no esta configurado: corre `spoochie slack setup`" };
         // Primero la agenda local: quien te invito o a quien invitaste. Slack solo
         // si no esta, porque buscar por nombre alli exige un scope que puede faltar.
         const u = Cfg.contact(cfg, req.to.slice(1)) ?? await slack.lookupUser(req.to.slice(1));
-        if (!u) return { ok: false, error: `no encuentro a ${req.to}: ni en tu agenda de spochie ni en Slack` };
+        if (!u) return { ok: false, error: `no encuentro a ${req.to}: ni en tu agenda de spoochie ni en Slack` };
         to = { sessionId: `slack:${u.id}`, name: u.name, cwd: "(otra maquina)", human: u.name, slackUser: u.id };
       } else {
         const matches = findSession(req.to).filter(s => s.sessionId !== req.sessionId);
@@ -248,12 +248,12 @@ async function handle(req: Req): Promise<any> {
 
     /** La puerta de Q3. La abre el humano receptor, no su Claude.
      *  Lo que la hace real es el propio sistema de permisos de Claude Code:
-     *  `spochie accept` no debe estar en la allowlist, asi que ejecutarlo saca
+     *  `spoochie accept` no debe estar en la allowlist, asi que ejecutarlo saca
      *  el dialogo de permiso y quien lo aprueba es la persona. */
     case "accept": {
       const t = T.load(req.id);
-      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
-      if (t.state === "closed") return { ok: false, error: `spochie ${req.id} esta cerrado (${t.closeReason})` };
+      if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
+      if (t.state === "closed") return { ok: false, error: `spoochie ${req.id} esta cerrado (${t.closeReason})` };
       if (t.state === "open") return { ok: true, id: t.id, already: true };
       if (t.to.sessionId !== req.sessionId) return { ok: false, error: "solo el lado que recibe la invitacion puede aceptarla" };
       t.state = "open";
@@ -268,7 +268,7 @@ async function handle(req: Req): Promise<any> {
       let aparte: string | undefined;
       if (Cfg.load().aparte !== false && !req.aqui && yo && !yo.aparte && !t.from.sessionId.startsWith(yo.sessionId)) {
         // No se espera a que arranque. A esta sesion no le llega nada mas: la respuesta
-        // a este comando es lo ultimo que ve del spochie.
+        // a este comando es lo ultimo que ve del spoochie.
         aparte = yo.cwd;
         void atender(t, yo.cwd).then(s => avisarDondeSeAtiende(t, s, yo.cwd));
       }
@@ -279,12 +279,12 @@ async function handle(req: Req): Promise<any> {
 
     case "say": {
       const t = T.load(req.id);
-      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
-      if (t.state === "closed") return { ok: false, error: `spochie ${req.id} esta cerrado (${t.closeReason})` };
-      if (!T.isParty(t, req.sessionId)) return { ok: false, error: `esta sesion no es parte del spochie ${req.id}` };
+      if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
+      if (t.state === "closed") return { ok: false, error: `spoochie ${req.id} esta cerrado (${t.closeReason})` };
+      if (!T.isParty(t, req.sessionId)) return { ok: false, error: `esta sesion no es parte del spoochie ${req.id}` };
       if (t.state === "pending") {
         return t.to.sessionId === req.sessionId
-          ? { ok: false, error: `el tunel no esta abierto. Preguntale a tu humano y, si acepta, ejecuta: spochie accept ${t.id}` }
+          ? { ok: false, error: `el tunel no esta abierto. Preguntale a tu humano y, si acepta, ejecuta: spoochie accept ${t.id}` }
           : { ok: false, error: `el otro lado todavia no ha aceptado el tunel` };
       }
 
@@ -320,7 +320,7 @@ async function handle(req: Req): Promise<any> {
           if (ok && slack) await slack.pensandoOn(tt, otro.human ?? otro.name);
           if (!ok) {
             const yo = sessById(T.mySide(tt, req.sessionId).sessionId);
-            if (yo) await send(yo, `[spochie ${tt.id}] tu mensaje NO salio a Slack. No des por hecho que lo ha leido.`);
+            if (yo) await send(yo, `[spoochie ${tt.id}] tu mensaje NO salio a Slack. No des por hecho que lo ha leido.`);
           }
         });
       }
@@ -331,9 +331,9 @@ async function handle(req: Req): Promise<any> {
 
     case "close": {
       const t = T.load(req.id);
-      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
+      if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
       if (t.state === "closed") return { ok: true, id: t.id, already: true };
-      if (req.sessionId && !T.isParty(t, req.sessionId)) return { ok: false, error: `esta sesion no es parte del spochie ${req.id}` };
+      if (req.sessionId && !T.isParty(t, req.sessionId)) return { ok: false, error: `esta sesion no es parte del spoochie ${req.id}` };
       await closeThread(t, req.reason ?? "cerrado a mano", req.sessionId);
       return { ok: true, id: t.id };
     }
@@ -367,10 +367,10 @@ async function handle(req: Req): Promise<any> {
 
     case "get": {
       const t = T.load(req.id);
-      return t ? { ok: true, thread: t } : { ok: false, error: `spochie ${req.id} no existe` };
+      return t ? { ok: true, thread: t } : { ok: false, error: `spoochie ${req.id} no existe` };
     }
 
-    /** El hook SessionEnd: cerrar la pantalla cierra tus spochies vivos. */
+    /** El hook SessionEnd: cerrar la pantalla cierra tus spoochies vivos. */
     case "session-end": {
       const closed: string[] = [];
       const porque = String(req.sessionId).startsWith("aparte-") ? "se cerro la ventana del Claude aparte" : "la otra sesion se cerro";
@@ -381,7 +381,7 @@ async function handle(req: Req): Promise<any> {
       return { ok: true, closed };
     }
 
-    /** Q7: si el spochie llego mientras no habia sesion viva, se entrega en cuanto
+    /** Q7: si el spoochie llego mientras no habia sesion viva, se entrega en cuanto
      *  arranca una que encaje. La cola aguanta lo que el reloj de 4h.
      *  Encajar no es "ser la primera que arranque": la rama del sobre tiene que
      *  existir en su checkout. Si no, se queda en cola para otra sesion. */
@@ -400,11 +400,11 @@ async function handle(req: Req): Promise<any> {
       const me = sessById(req.sessionId);
       if (!me) return { ok: false, error: "sesion no registrada" };
       const t = T.load(req.id);
-      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
-      if (t.state === "closed") return { ok: false, error: `spochie ${req.id} esta cerrado` };
+      if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
+      if (t.state === "closed") return { ok: false, error: `spoochie ${req.id} esta cerrado` };
       const actual = t.state === "open" && !t.to.sessionId.startsWith("slack:") ? sessById(t.to.sessionId) : undefined;
       // Un aparte si se puede mover de repo con take; otra sesion interactiva viva, no.
-      if (actual && !actual.aparte) return { ok: false, error: `spochie ${req.id} ya lo atiende ${t.to.name}` };
+      if (actual && !actual.aparte) return { ok: false, error: `spoochie ${req.id} ya lo atiende ${t.to.name}` };
       // Tomarlo desde una sesion fija el directorio. Si ya esta aceptado y toca Claude
       // aparte, se lanza ahi (o se deja el que ya hay si es el mismo repo); si no, la
       // invitacion entra en la sesion para que el humano acepte, y el aparte nace al aceptar.
@@ -415,7 +415,7 @@ async function handle(req: Req): Promise<any> {
         return { ok: true, id: t.id, aparte: me.cwd, already: Boolean(mismo), ventana: Ap.modo() === "ventana" };
       }
       if (actual?.aparte) {
-        // --aqui sobre un spochie que atendia un aparte: el aparte se despide.
+        // --aqui sobre un spoochie que atendia un aparte: el aparte se despide.
         const ap = apartes.get(t.id) ?? { id: t.id, cwd: actual.cwd, modo: "ventana" as const, sess: actual, cola: [], listo: true, muerto: false };
         apartes.delete(t.id);
         await despedir(ap, `lo atiende ahora la sesion ${me.name}`);
@@ -430,7 +430,7 @@ async function handle(req: Req): Promise<any> {
     case "release":
     case "discard": {
       const t = T.load(req.id);
-      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
+      if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
       const mio = sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId;
       if (req.sessionId && req.sessionId !== mio) return { ok: false, error: "solo el lado que recibe puede soltar lo retenido" };
       const n = await soltar(t, req.op === "release" ? "suelta" : "descarta", "por CLI");
@@ -439,7 +439,7 @@ async function handle(req: Req): Promise<any> {
 
     case "transcript-url": {
       const t = T.load(req.id);
-      if (!t) return { ok: false, error: `spochie ${req.id} no existe` };
+      if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
       t.transcriptUrl = req.url;
       t.transcriptOwner = req.sessionId ?? t.transcriptOwner;
       t.transcriptStale = 0;
@@ -459,7 +459,7 @@ async function handle(req: Req): Promise<any> {
 }
 
 /**
- * A que sesion local le toca un spochie que llega de fuera.
+ * A que sesion local le toca un spoochie que llega de fuera.
  *
  * Siempre a UNA, y con la invitacion entera. La version anterior, con varias sesiones
  * y sin rama que encajara, mandaba a todas una linea de "hay varias, haz take" sin el
@@ -469,7 +469,7 @@ async function handle(req: Req): Promise<any> {
  * sesion donde la persona escribio por ultima vez.
  */
 function elegir(t: T.Thread): { pick: SessionRecord | null; otras: number } {
-  // Un Claude aparte atiende un solo spochie: nunca es candidato para otro.
+  // Un Claude aparte atiende un solo spoochie: nunca es candidato para otro.
   const vivas = liveSessions().filter(s => !s.aparte);
   if (vivas.length === 0) return { pick: null, otras: 0 };
   const otras = vivas.length - 1;
@@ -492,18 +492,18 @@ async function assign(t: T.Thread): Promise<string | null> {
   if (!pick) return null;
   t.to = { ...t.to, sessionId: pick.sessionId, name: pick.name, cwd: pick.cwd, human: Cfg.load().human ?? t.to.human };
   T.save(t);
-  const extra = otras ? `\nSi esto es para otra sesion tuya (hay ${otras} mas abiertas), tu humano lo dice y desde alli:  spochie take ${t.id}` : "";
+  const extra = otras ? `\nSi esto es para otra sesion tuya (hay ${otras} mas abiertas), tu humano lo dice y desde alli:  spoochie take ${t.id}` : "";
   await send(pick, T.renderInvite(t, pick.sessionId) + extra);
   log("assign", t.id, "->", pick.name, otras ? `(${otras} sesiones mas)` : "");
   return pick.sessionId;
 }
 
-/** Aceptar escribiendo en el hilo de Slack. Hace lo mismo que `spochie accept`. */
+/** Aceptar escribiendo en el hilo de Slack. Hace lo mismo que `spoochie accept`. */
 async function onSlackAccept(t: T.Thread, quien: string) {
   // El puente puede traer un hilo viejo: "acepto" y luego "continua" en el mismo
   // tick publicaban dos veces "ha aceptado". Se mira el estado fresco.
   if ((T.load(t.id) ?? t).state !== "pending") return;
-  // Puede que el spochie todavia no tenga sesion local: primero se le busca una.
+  // Puede que el spoochie todavia no tenga sesion local: primero se le busca una.
   if (t.to.sessionId.startsWith("slack:")) await assign(t);
   const fresco = T.load(t.id) ?? t;
   fresco.state = "open";
@@ -517,14 +517,14 @@ async function onSlackAccept(t: T.Thread, quien: string) {
     if (Cfg.load().aparte !== false && !fresco.from.sessionId.startsWith(local.sessionId)) {
       // Una linea, y es la ultima que ve esa sesion: sin ella su Claude se queda con la
       // pregunta de "¿lo aceptas?" en el aire y acaba haciendo accept o take por su cuenta.
-      await send(local, `[spochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
+      await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
       void atender(fresco, local.cwd).then(s => avisarDondeSeAtiende(fresco, s, local.cwd));
     } else {
-      await send(local, `[spochie ${fresco.id} | ${fresco.subject}] tu humano lo ha aceptado ${quien}. El tunel esta abierto: puedes contestar con  spochie say ${fresco.id} "<texto>"`);
+      await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo ha aceptado ${quien}. El tunel esta abierto: puedes contestar con  spoochie say ${fresco.id} "<texto>"`);
     }
   } else if (!local) {
     // Ninguna sesion de Claude Code abierta en esta maquina: no hay repo donde nacer.
-    if (slack && fresco.slack) await slack.aviso(fresco, `:warning: ${Cfg.load().human ?? "el otro lado"} no tiene ninguna sesion de Claude Code abierta. El spochie espera: al abrir una en el repo, \`spochie take ${fresco.id}\`.`);
+    if (slack && fresco.slack) await slack.aviso(fresco, `:warning: ${Cfg.load().human ?? "el otro lado"} no tiene ninguna sesion de Claude Code abierta. El spoochie espera: al abrir una en el repo, \`spoochie take ${fresco.id}\`.`);
   }
   await refreshTranscript(fresco);
   log("accept", fresco.id, quien, local ? `-> ${local.name}` : "sin sesion local");
@@ -551,7 +551,7 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   t.lastActivityAt = m.at;
   if (t.state === "pending" && m.author === "human") { t.state = "open"; t.acceptedAt = m.at; t.acceptedBy = "humano en Slack"; }
   T.save(t);
-  // Un spochie recien descubierto todavia no tiene lado local: se le busca uno.
+  // Un spoochie recien descubierto todavia no tiene lado local: se le busca uno.
   if (t.state === "pending" && t.to.sessionId.startsWith("slack:")) {
     const asignada = await assign(t);
     log("slack-in", t.id, m.author, asignada ? "asignado" : "sin sesion a la que asignar");
@@ -577,7 +577,7 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
  *  Un mensaje que pide actuar se queda en el hilo, marcado, hasta que el humano
  *  receptor lo suelte; uno fuera de tema entra con su etiqueta y un aviso en Slack. */
 async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
-  if (!Cfg.load().guardian || m.kind !== "text" || m.author === "spochie") return true;
+  if (!Cfg.load().guardian || m.kind !== "text" || m.author === "spoochie") return true;
   const v = await judge(t.subject, m.text);
   m.offTopic = { verdict: v.verdict, why: v.why };
   const quien = T.otherSide(t, T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId).sessionId);
@@ -588,7 +588,7 @@ async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
     const receptor = T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId);
     if (slack && t.slack) await slack.aviso(t, `:no_entry: *retenido por el vigilante*: ${v.why}. <@${receptor.slackUser ?? ""}> escribe \`suelta\` en este hilo para entregarlo, o \`descarta\`.`);
     const local = sessById(receptor.sessionId);
-    if (local) await send(local, `[spochie ${t.id} | ${t.subject}] un mensaje de ${quien.human ?? quien.name} esta RETENIDO por el vigilante: ${v.why}. No lo has recibido. Tu humano decide: "suelta" o "descarta" en el hilo de Slack, o  spochie release ${t.id}  /  spochie discard ${t.id}`);
+    if (local) await send(local, `[spoochie ${t.id} | ${t.subject}] un mensaje de ${quien.human ?? quien.name} esta RETENIDO por el vigilante: ${v.why}. No lo has recibido. Tu humano decide: "suelta" o "descarta" en el hilo de Slack, o  spoochie release ${t.id}  /  spoochie discard ${t.id}`);
     return false;
   }
   if (v.verdict !== "dentro") {
@@ -634,7 +634,7 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string) {
   log("close", t.id, reason, notified.join(" "));
   const ap = apartes.get(t.id);
   if (ap?.modo === "fondo") setTimeout(() => Ap.matar(ap), 15_000).unref();
-  if (ap?.modo === "ventana" && ap.listo) { const r = sessById(ap.sess.sessionId); if (r) await send(r, `Este spochie ha terminado. Puedes cerrar esta ventana.`); }
+  if (ap?.modo === "ventana" && ap.listo) { const r = sessById(ap.sess.sessionId); if (r) await send(r, `Este spoochie ha terminado. Puedes cerrar esta ventana.`); }
   if (ap) apartes.delete(t.id);
 }
 
@@ -664,7 +664,7 @@ async function tick() {
 
 function main() {
   ensureDirs();
-  if (alreadyRunning()) { console.error("spochied ya esta corriendo"); process.exit(0); }
+  if (alreadyRunning()) { console.error("spoochied ya esta corriendo"); process.exit(0); }
   if (existsSync(DAEMON_SOCK)) unlinkSync(DAEMON_SOCK);
   writeFileSync(DAEMON_LOCK, String(process.pid));
   // El latido es lo unico que distingue un demonio vivo de uno colgado.
@@ -689,7 +689,7 @@ function main() {
     conn.on("error", () => {});
   });
 
-  server.listen(DAEMON_SOCK, () => log("spochied escuchando", DAEMON_SOCK, "pid", process.pid, "slack", Boolean(slack)));
+  server.listen(DAEMON_SOCK, () => log("spoochied escuchando", DAEMON_SOCK, "pid", process.pid, "slack", Boolean(slack)));
 
   const late = () => {
     const vivo = T.all().some(t => t.state !== "closed" && t.slack);

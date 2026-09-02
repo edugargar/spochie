@@ -27,8 +27,8 @@ test("un mensaje escrito a mano en Slack no tiene sobre", () => {
 test("la invitacion menciona a quien recibe y dice como aceptar", () => {
   const b = flat(inviteBlocks(t));
   expect(b).toContain("<@U_ALEX>");
-  expect(b).toContain("spochie accept a3f1");
-  expect(b).toContain("Spochie de Edu");
+  expect(b).toContain("spoochie accept a3f1");
+  expect(b).toContain("Spoochie de Edu");
   expect(b).toContain("feat/perfil");
   expect(b).toContain("src/Modal.tsx");
 });
@@ -37,7 +37,7 @@ test("la capa de Slack no lleva las instrucciones internas del receptor", () => 
   const b = flat(messageBlocks(t, msg({ text: "el catch no limpia el estado" })));
   expect(b).toContain("el catch no limpia el estado");
   expect(b).not.toContain("No apliques cambios");
-  expect(b).not.toContain("spochie say");
+  expect(b).not.toContain("spoochie say");
 });
 
 test("se distingue lo que dice la persona de lo que dice su Claude", () => {
@@ -60,13 +60,13 @@ test("un parche va en bloque de codigo y avisa de que no lo aplica nadie por ti"
 });
 
 test("los avisos del sistema no arrastran el texto interno a Slack", () => {
-  const acc = noticeBlocks({ ...t, acceptedBy: "Alex" }, '[spochie a3f1] b ha aceptado el tunel.\nYa podeis hablar: spochie say a3f1 "<texto>"');
+  const acc = noticeBlocks({ ...t, acceptedBy: "Alex" }, '[spoochie a3f1] b ha aceptado el tunel.\nYa podeis hablar: spoochie say a3f1 "<texto>"');
   expect(acc.text).toContain("Alex");
-  expect(acc.text).not.toContain("spochie say");
+  expect(acc.text).not.toContain("spoochie say");
   expect(acc.text).not.toContain("<texto>");
-  const cl = noticeBlocks({ ...t, closeReason: "resuelto" }, "[spochie a3f1 | s] cerrado (resuelto).");
+  const cl = noticeBlocks({ ...t, closeReason: "resuelto" }, "[spoochie a3f1 | s] cerrado (resuelto).");
   expect(cl.text).toContain("resuelto");
-  expect(cl.text).not.toContain("[spochie");
+  expect(cl.text).not.toContain("[spoochie");
 });
 
 test("el texto de respaldo es lo que sale en la notificacion del movil", () => {

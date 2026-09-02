@@ -66,27 +66,27 @@ test("ciclo completo: abrir, puerta de aprobacion, hablar y cerrar", async () =>
   register({ sessionId: "B", name: "repo-b", cwd: "/repo/b", socket: B.sock, token: "tb", pid: process.pid, startedAt: 2 });
 
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, SPOCHIE_HOME: process.env.SPOCHIE_HOME }, stdio: "ignore",
+    env: { ...process.env, SPOOCHIE_HOME: process.env.SPOOCHIE_HOME }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   const pong = await rpc({ op: "ping" });
   expect(pong.ok).toBe(true);
   // Que hablamos con EL demonio que hemos levantado, no con otro que ya estuviera.
   expect(pong.pid).toBe(daemon.pid!);
-  expect(process.env.SPOCHIE_HOME).toContain("spochie-test-");
+  expect(process.env.SPOOCHIE_HOME).toContain("spoochie-test-");
 
   // 1. Abrir: la invitacion llega a B y el hilo nace pendiente.
   const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "el boton", body: "mira tu Button" });
   expect(open.ok).toBe(true);
   expect(open.delivered).toBe(true);
   const id = open.id;
-  expect(await llega(B, x => x.includes(`spochie accept ${id}`))).toBe(true);
+  expect(await llega(B, x => x.includes(`spoochie accept ${id}`))).toBe(true);
   expect((await rpc({ op: "list" })).threads[0].state).toBe("pending");
 
   // 2. La puerta: B no puede contestar sin que su humano acepte.
   const early = await rpc({ op: "say", sessionId: "B", id, text: "contesto sin permiso" });
   expect(early.ok).toBe(false);
-  expect(early.error).toContain(`spochie accept ${id}`);
+  expect(early.error).toContain(`spoochie accept ${id}`);
   expect(A.got.length).toBe(0);
 
   // 3. Aceptar: solo el lado que recibe puede hacerlo.
@@ -109,7 +109,7 @@ test("ciclo completo: abrir, puerta de aprobacion, hablar y cerrar", async () =>
   expect((await rpc({ op: "say", sessionId: "A", id, text: "una mas" })).ok).toBe(false);
 }, 30_000);
 
-test("cerrar la pantalla cierra tus spochies vivos", async () => {
+test("cerrar la pantalla cierra tus spoochies vivos", async () => {
   const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "otro", body: "hola" });
   await rpc({ op: "accept", sessionId: "B", id: open.id });
   const end = await rpc({ op: "session-end", sessionId: "A" });
@@ -119,7 +119,7 @@ test("cerrar la pantalla cierra tus spochies vivos", async () => {
   expect(B.got.some(x => x.includes(open.id) && x.includes("la otra sesion se cerro"))).toBe(true);
 }, 20_000);
 
-test("un spochie remoto no se lo lleva la primera sesion que arranque", async () => {
+test("un spoochie remoto no se lo lleva la primera sesion que arranque", async () => {
   const { repoMatches } = await import("../src/match.ts");
   // Sin rama en el sobre no hay con que decidir: no se reparte.
   expect(repoMatches(process.cwd(), undefined)).toBe(false);
@@ -132,7 +132,7 @@ test("el reparto no exige que el otro tenga tu rama", async () => {
   // La regla vieja: solo entraba si la rama existia en el checkout del receptor.
   // Eso deja fuera el caso normal, dos personas en ramas y repos distintos.
   expect(repoMatches(process.cwd(), "feat/modal-guardar")).toBe(false);
-  // Con una sola sesion viva, ese spochie tiene que llegar igual: lo comprueba
+  // Con una sola sesion viva, ese spoochie tiene que llegar igual: lo comprueba
   // el reparto del demonio, no el emparejamiento de ramas.
 });
 
@@ -177,7 +177,7 @@ test("un mensaje vacio no sale", async () => {
 test("con varias sesiones y ninguna que encaje, la invitacion entera entra en UNA: la mas activa", async () => {
   const { utimesSync } = await import("node:fs");
   const { SESSIONS_DIR } = await import("../src/paths.ts");
-  // Un spochie llegado por Slack, sin lado local, con una rama que ninguna sesion tiene.
+  // Un spoochie llegado por Slack, sin lado local, con una rama que ninguna sesion tiene.
   const sobre = (id: string, subject: string): T.Thread => ({
     id, subject, state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
     from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(otra maquina)", human: "Ana", slackUser: "U_ANA" },
@@ -192,12 +192,12 @@ test("con varias sesiones y ninguna que encaje, la invitacion entera entra en UN
   T.save(sobre("amb1", "ambiguo"));
   await rpc({ op: "claim", sessionId: "B" });
   // La invitacion completa, con la pregunta, en A. En B nada. Y ninguna linea de "haz take".
-  expect(await llega(A, x => x.includes("spochie accept amb1") && x.includes("la pregunta de amb1"))).toBe(true);
+  expect(await llega(A, x => x.includes("spoochie accept amb1") && x.includes("la pregunta de amb1"))).toBe(true);
   await sleep(300);
   expect(B.got.some(x => x.includes("amb1"))).toBe(false);
   expect(A.got.some(x => x.includes("hay varias sesiones tuyas abiertas"))).toBe(false);
   // Pero si le dice que hay otras, por si no era esta.
-  expect(A.got.some(x => x.includes("amb1") && x.includes("spochie take amb1"))).toBe(true);
+  expect(A.got.some(x => x.includes("amb1") && x.includes("spoochie take amb1"))).toBe(true);
 
   // Si el asunto nombra el directorio de una sesion, esa gana aunque no sea la mas activa.
   register({ sessionId: "C", name: "modal-front", cwd: "/repo/modal-front", socket: B.sock, token: "tb", pid: process.pid, startedAt: 3 });
@@ -205,7 +205,7 @@ test("con varias sesiones y ninguna que encaje, la invitacion entera entra en UN
   const b0 = B.got.length;
   T.save(sobre("amb2", "el boton de modal-front no cierra"));
   await rpc({ op: "claim", sessionId: "A" });
-  expect(await llega(B, x => x.includes("spochie accept amb2"))).toBe(true);
+  expect(await llega(B, x => x.includes("spoochie accept amb2"))).toBe(true);
   expect(B.got.slice(b0).some(x => x.includes("amb2"))).toBe(true);
   expect(A.got.some(x => x.includes("amb2"))).toBe(false);
   const { unregister } = await import("../src/registry.ts");

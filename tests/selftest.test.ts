@@ -9,13 +9,13 @@ import { selftest } from "../src/selftest.ts";
 test("con el demonio roto, ni un solo paso sale en verde", async () => {
   // No se rompe el PATH: Bun resuelve "bun" a si mismo aunque no este en el PATH,
   // y eso hacia que este test pasara o fallara segun el orden de la suite.
-  process.env.SPOCHIE_DAEMON_CMD = "/nonexistent/bun run daemon.ts";
+  process.env.SPOOCHIE_DAEMON_CMD = "/nonexistent/bun run daemon.ts";
   try {
     const pasos = await selftest();
     expect(pasos.length).toBeGreaterThan(0);
     expect(pasos.filter(p => p.ok)).toEqual([]);
     expect(pasos.some(p => p.detalle === "no se ha llegado a probar" || p.que === "la prueba se rompio")).toBe(true);
   } finally {
-    delete process.env.SPOCHIE_DAEMON_CMD;
+    delete process.env.SPOOCHIE_DAEMON_CMD;
   }
 }, 30_000);

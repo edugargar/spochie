@@ -15,7 +15,7 @@ import { basename, join, extname } from "node:path";
 import { ROOT } from "./paths.ts";
 
 const API = "https://slack.com/api/";
-/** Un limite deliberado: spochie es para pistas, no para mover binarios. */
+/** Un limite deliberado: spoochie es para pistas, no para mover binarios. */
 export const MAX_BYTES = 10 * 1024 * 1024;
 export const SPOOL = join(ROOT, "files");
 

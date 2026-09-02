@@ -9,7 +9,7 @@ export type Config = {
   guardian: boolean;
   /** Publicar el transcript como Artifact al abrir y en cada turno. */
   transcript: boolean;
-  /** Los spochies que llegan los atiende un Claude aparte (claude -p en el repo), no la
+  /** Los spoochies que llegan los atiende un Claude aparte (claude -p en el repo), no la
    *  sesion donde trabajas. Esa solo recibe el aviso. Apagado, todo entra en tu sesion. */
   aparte?: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
@@ -27,7 +27,7 @@ export type Config = {
     /** Clave dentro de ese JSON. Por defecto "userToken". */
     tokenKey?: string;
     /** Token de bot (xoxb-) de la app. Es credencial de la app, no personal: todo
-     *  el trafico de spochie vive en el DM entre el bot y cada persona, que es
+     *  el trafico de spoochie vive en el DM entre el bot y cada persona, que es
      *  UN canal por maquina que consultar en vez de los 197 DMs de alguien. */
     botToken?: string;
     botTokenKey?: string;

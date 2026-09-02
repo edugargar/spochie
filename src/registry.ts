@@ -10,7 +10,7 @@ export type SessionRecord = {
   token: string;
   pid: number;
   startedAt: number;
-  /** Si es un Claude aparte, el id del spochie que atiende. No se le asigna otro. */
+  /** Si es un Claude aparte, el id del spoochie que atiende. No se le asigna otro. */
   aparte?: string;
   /** Ultima vez que la persona escribio en esa sesion (mtime del registro, que el hook
    *  UserPromptSubmit toca). Es lo que dice "la terminal en la que estoy trabajando". */
@@ -55,7 +55,7 @@ export function liveSessions(): SessionRecord[] {
   for (const f of readdirSync(SESSIONS_DIR)) {
     if (!f.endsWith(".json")) continue;
     const p = join(SESSIONS_DIR, f);
-    if (permisosFlojos(p)) { console.error(`spochie: ignoro ${f}, tiene permisos abiertos (chmod 600)`); continue; }
+    if (permisosFlojos(p)) { console.error(`spoochie: ignoro ${f}, tiene permisos abiertos (chmod 600)`); continue; }
     let rec: SessionRecord;
     try { rec = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
     // Un Claude aparte recibe por stdin del demonio: no tiene socket que comprobar.

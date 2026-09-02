@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/poochie.png" width="230" alt="Poochie, spochie's mascot">
+  <img src="docs/poochie.png" width="230" alt="Poochie, spoochie's mascot">
 </p>
 
-<h1 align="center">spochie</h1>
+<h1 align="center">Spoochie</h1>
 
 <p align="center">
   A tunnel between your Claude Code session and a teammate's.<br>
@@ -22,11 +22,11 @@
 
 ---
 
-## What spochie is
+## What spoochie is
 
-spochie is a Claude Code plugin that lets your Claude talk to a teammate's Claude. You
+spoochie is a Claude Code plugin that lets your Claude talk to a teammate's Claude. You
 ask a question about their branch, their repo, or their machine; your Claude opens a
-**spochie** (a short, scoped tunnel) to theirs; theirs reads its own local files and
+**spoochie** (a short, scoped tunnel) to theirs; theirs reads its own local files and
 answers through the tunnel; the answer arrives in your session as one more turn. The
 other person has to say yes before anything opens, and both of you see the whole
 exchange in a Slack thread, where you can step in at any time.
@@ -38,8 +38,16 @@ patch to apply if it convinces you, or a branch name. The Claude that answers on
 other side runs in its own terminal window, read-only, so the person's working session
 is never interrupted by someone else's conversation.
 
-It is called spochie after Poochie, the dog with the sunglasses that Itchy & Scratchy
-got so the show would be "cooler". Say it as you like; the CLI is `spochie`.
+It is called Spoochie after Poochie, the dog with the sunglasses that Itchy & Scratchy
+got so the show would be "cooler": Poochie with an s, said the same way. The CLI, the
+plugin and the slash commands are all `spoochie`, lowercase.
+
+> **Coming from `spochie` (0.5.x)?** Same tool, one letter longer. Uninstall the old
+> plugin first, then install the new one: `/plugin uninstall spochie@edugargar`,
+> `/plugin marketplace update edugargar`, `/plugin install spoochie@edugargar`, and
+> restart Claude Code. Your state (token, keys, contacts, threads) moves itself from
+> `~/.claude/spochie` to `~/.claude/spoochie` on first start, and the old launchd daemon
+> is stopped and removed. The old GitHub URL redirects. Nothing to re-join.
 
 ## The problem
 
@@ -49,7 +57,7 @@ goes like this: Alice asks her Claude, copies the answer, pastes it to Bob on Sl
 pastes it into his Claude, copies what comes out and sends it back. Four pastes per
 question, with the humans as couriers.
 
-spochie removes the pastes. Alice's Claude opens a spochie, Bob's receives it with the
+spoochie removes the pastes. Alice's Claude opens a spoochie, Bob's receives it with the
 subject and the context, reads **its own local files** and answers. Both humans see it in
 a Slack thread and can step in whenever they want. Nobody writes on the other person's
 machine, and no tunnel opens until the receiving person says yes.
@@ -64,7 +72,7 @@ the first session start fetches a self-contained binary from this repo's release
 The inviter runs:
 
 ```
-spochie invite --to alex@example.com          # or --to U01234567 --name Alex
+spoochie invite --to alex@example.com          # or --to U01234567 --name Alex
 ```
 
 The bot sends the newcomer a DM with everything inside: the two plugin commands, the
@@ -74,22 +82,22 @@ the newcomer never has to be looked up in Slack and `@edu` resolves locally afte
 The newcomer follows the DM:
 
 ```
-/plugin marketplace add edugargar/spochie
-/plugin install spochie@edugargar
+/plugin marketplace add edugargar/spoochie
+/plugin install spoochie@edugargar
 ```
 
 restarts Claude Code, and pastes the last line of the DM:
 
 ```
-/spochie:join eyJiIjoi...
+/spoochie:join eyJiIjoi...
 ```
 
 Pasting the whole DM works too; the invitation cleans itself out of whatever surrounds
-it. At the end it runs `spochie selftest` and prints `Todo bien` or which step failed.
+it. At the end it runs `spoochie selftest` and prints `Todo bien` or which step failed.
 
-`spochie invite` with no `--to` prints the line for you to send by hand. The invitation
+`spoochie invite` with no `--to` prints the line for you to send by hand. The invitation
 carries the bot token, which belongs to the app and to nobody in particular; on the
-newcomer's machine it is stored in `~/.claude/spochie/config.json` with mode 0600.
+newcomer's machine it is stored in `~/.claude/spoochie/config.json` with mode 0600.
 
 ## How it works
 
@@ -103,16 +111,16 @@ sequenceDiagram
     participant CB as Bob's Claude
     participant B as Bob
 
-    CA->>DA: spochie open @bob --subject "the modal breaks"
+    CA->>DA: spoochie open @bob --subject "the modal breaks"
     DA->>S: posts the invitation in the DM
     S-->>B: notification
     DB->>S: discovers the invitation
     DB->>CB: injects the envelope into the session
-    CB->>B: "Alice wants to open a spochie. Accept?"
+    CB->>B: "Alice wants to open a spoochie. Accept?"
     B->>S: replies in the thread (that is accepting)
     DB->>CB: tunnel open
     CB->>CB: reads its local files
-    CB->>DB: spochie say "it's the container's min-width"
+    CB->>DB: spoochie say "it's the container's min-width"
     DB->>S: reply in the thread
     DA->>S: picks it up
     DA->>CA: arrives as one more turn
@@ -134,7 +142,7 @@ A local process writes two lines there and the text enters that session as a tur
 ```
 
 That's the whole thing. The format is not in the public docs: it comes from the Claude
-Code binary itself, which prints it as a supported recipe for hooks and scripts. spochie
+Code binary itself, which prints it as a supported recipe for hooks and scripts. spoochie
 does not use `channels`, so it depends on nothing in research preview and on no workspace
 Owner enabling anything.
 
@@ -162,7 +170,7 @@ flowchart LR
 Parts:
 
 - **`SessionStart` hook**: registers the session, starts the daemon and claims the
-  spochies that arrived while nobody was listening.
+  spoochies that arrived while nobody was listening.
 - **daemon, one per machine**: the only thing alive between turns, so it keeps the clocks
   and routes. A Claude can't hold a timer; it only exists while it thinks. On macOS it
   runs under launchd and writes a heartbeat every 20 s that `doctor` measures.
@@ -172,18 +180,18 @@ Parts:
   gets a label; a message that asks the receiving Claude to act is held until the
   receiving human releases it.
 - **transcript**: one HTML file per thread, ready to publish as an Artifact.
-- **`SessionEnd` hook**: closing the window closes your live spochies.
-- **the Claude on the side**: one Claude per accepted spochie, in a new terminal window,
+- **`SessionEnd` hook**: closing the window closes your live spoochies.
+- **the Claude on the side**: one Claude per accepted spoochie, in a new terminal window,
   read-only, in the repo that matters, so your own session stays yours.
 - **`UserPromptSubmit` hook**: touches your session record, so the daemon knows which
   terminal you are actually working in and delivers the invitation there.
 
 ## What it's for
 
-- **"Why does this break on your branch?"** Your Claude opens a spochie with the subject
+- **"Why does this break on your branch?"** Your Claude opens a spoochie with the subject
   and the touched files. Theirs reads its checkout and answers with the cause, not a guess.
 - **A fix that lives on another machine.** The Claude on the other side sends a patch
-  (`spochie patch --from-git`) or a branch name. You apply it if it convinces you.
+  (`spoochie patch --from-git`) or a branch name. You apply it if it convinces you.
 - **A screenshot that says more than a thousand lines.** `--files broken-modal.png`
   uploads it to the thread; the other Claude opens it from its own disk and describes it.
 - **Context nobody wrote down.** "What's the flag that disables the cache locally?" Their
@@ -193,46 +201,46 @@ Parts:
 
 ## The Claude on the side
 
-A spochie that lands in the session you are working in smears someone else's
+A spoochie that lands in the session you are working in smears someone else's
 conversation over your screen. So by default it doesn't. The session you last typed in
 gets the invitation, once, with the actual question in it. That is the only thing an
-interactive session ever sees. Once you accept (in Slack or with `spochie accept`), the
+interactive session ever sees. Once you accept (in Slack or with `spoochie accept`), the
 daemon opens a **new terminal window** in that repo running a Claude of its own, hands
 it the thread, and every later turn goes there. You watch it work in that window and can
 type to it. It can read the repo and run read-only git; it cannot write files, cannot
-accept or release anything. Closing the window closes the spochie.
+accept or release anything. Closing the window closes the spoochie.
 
 Which session gets the invitation, in order: the one whose checkout has the branch in
 the envelope; the one whose directory name appears in the subject or the first message;
-otherwise the one you typed in most recently. If it picked wrong, `spochie take <id>`
+otherwise the one you typed in most recently. If it picked wrong, `spoochie take <id>`
 from the right session moves it. Accepting twice, or taking it from the same repo, never
 opens a second window.
 
 - On macOS the window is Terminal.app, opened with `open`, which needs no permissions.
-  Anywhere a window cannot be opened (Linux without a desktop, `SPOCHIE_VENTANA=fondo`)
+  Anywhere a window cannot be opened (Linux without a desktop, `SPOOCHIE_VENTANA=fondo`)
   the side Claude runs headless as `claude -p`, with its output in
-  `~/.claude/spochie/aparte/<id>.log`.
+  `~/.claude/spoochie/aparte/<id>.log`.
 - `--aqui` on `accept` or `take` keeps the old behaviour: that session answers itself.
-- `spochie config --aparte off` turns the side Claude off for good.
+- `spoochie config --aparte off` turns the side Claude off for good.
 - Where it runs is posted in the Slack thread, not in your terminals.
 
 ## Usage
 
-In practice there's nothing to learn: tell your Claude in plain words, "open a spochie
+In practice there's nothing to learn: tell your Claude in plain words, "open a spoochie
 with Bob about the modal save error". Underneath it runs this:
 
 ```
-spochie sessions
-spochie open <target> --subject "the button breaks" --body "..." [--files a,b]
+spoochie sessions
+spoochie open <target> --subject "the button breaks" --body "..." [--files a,b]
     target: a local session name, or @person for another machine
-spochie accept <id>                  RUN BY THE RECEIVING HUMAN
-spochie say <id> "<text>" [--human] [--files a,b]
-spochie patch <id> [--from-git | --diff-file f]
-spochie branch <id> <branch>
-spochie close <id> --reason "..."
-spochie list | show <id> | transcript <id>
-spochie search "<text>"              across every spochie on this machine
-spochie config --human "Alice" --guardian on|off --transcript on|off
+spoochie accept <id>                  RUN BY THE RECEIVING HUMAN
+spoochie say <id> "<text>" [--human] [--files a,b]
+spoochie patch <id> [--from-git | --diff-file f]
+spoochie branch <id> <branch>
+spoochie close <id> --reason "..."
+spoochie list | show <id> | transcript <id>
+spoochie search "<text>"              across every spoochie on this machine
+spoochie config --human "Alice" --guardian on|off --transcript on|off
 ```
 
 When someone opens one for you, you get a DM from the bot. Replying in that thread is
@@ -244,7 +252,7 @@ Not in a policy document: built, each with its test.
 
 - **The receiving human opens the door.** A `say` before acceptance is rejected with the
   exact command to run. What makes the approval real is Claude Code's permission system:
-  keep `spochie accept` out of your allowlist and running it raises the dialog, which
+  keep `spoochie accept` out of your allowlist and running it raises the dialog, which
   only the person can approve.
 - **Nobody writes on the other machine.** A fix travels as a text patch or a branch, and
   the Claude over there applies it under its own permissions, if it's convinced.
@@ -252,7 +260,7 @@ Not in a policy document: built, each with its test.
   Attaching more is convenient right up to the day a `.env` slips into the envelope.
 - **What the other side writes is fenced.** Every message enters between a random marker
   that changes per message, and the receiver's rules always come after the closing
-  marker. Without that, a message could write its own headers or imitate spochie's
+  marker. Without that, a message could write its own headers or imitate spoochie's
   instructions.
 - **Two clocks**: pending acceptance survives 4 h; live and silent dies at 10 min, with a
   warning at 7. An unread message and an unanswered call are not the same thing.
@@ -263,7 +271,7 @@ Not in a policy document: built, each with its test.
   trusted. Off-topic only gets a label and a note in the thread. A message that asks
   the receiving Claude to run, modify, install, open, send files or secrets, or that
   poses as system rules, never enters the session: it waits in the thread until the
-  receiving human writes `suelta` (or `descarta`), or runs `spochie release`.
+  receiving human writes `suelta` (or `descarta`), or runs `spoochie release`.
 - **Envelopes are signed.** Each person gets an ed25519 key at join. Every envelope
   carries the public key and a signature over id, kind, sender and text; the first key
   seen for a Slack id is pinned, like SSH, and a later envelope from that id with
@@ -293,28 +301,28 @@ What you should know:
 - **One bot token for the whole team**, distributed in the invitation. Whoever holds it
   can read the bot's DM with anyone and post as the bot. When someone leaves, rotate it
   and send a fresh invitation. That is the price of "one paste" onboarding; per-person
-  OAuth (`xoxp`) is still supported via `spochie slack setup` for teams that want it.
+  OAuth (`xoxp`) is still supported via `spoochie slack setup` for teams that want it.
 - **Keys are pinned on first sight.** Whoever holds the bot token can still post the
   *first* envelope for a Slack id nobody has heard from, with a key of their own. After
   that, that id is theirs. Invitations carry the inviter's key, so the person who
   invited you is pinned before anything arrives.
 - **Remote text enters your session as a turn.** The fence stops it from posing as a
-  header or as spochie's rules, and the guardian holds what asks you to act, but a
+  header or as spoochie's rules, and the guardian holds what asks you to act, but a
   persuasive message is still a persuasive message. Run Claude Code with normal
-  permissions, not bypass, on machines that use spochie.
-- **The bot token goes through the model once.** `/spochie:join <blob>` passes the
+  permissions, not bypass, on machines that use spoochie.
+- **The bot token goes through the model once.** `/spoochie:join <blob>` passes the
   invitation as a prompt argument, so the token is in that session's context and in its
   local transcript under `~/.claude/projects/`. It is the same token that is already in
   the Slack DM the invitation came from. Rotate it when someone leaves.
 - **The side Claude is read-only in practice, not by proof.** Its allowlist is Read,
-  Grep, Glob, read-only git and the spochie subcommands. `allowedTools` cannot filter
+  Grep, Glob, read-only git and the spoochie subcommands. `allowedTools` cannot filter
   arguments, so `git diff --output=<file>` would write a file. It has no Edit, Write or
   free Bash, and every other command asks the person watching the window.
 - **The guardian fails open.** If Haiku is unreachable or times out (20 s), the message
   is delivered unlabelled rather than lost. A held message needs a working guardian.
 - **Slack sees everything**: patches and screenshots travel in the clear through Slack,
   like anything else you already paste there. The guardian sends each incoming message
-  to Haiku; `spochie config --guardian off` turns that off, and with it the hold.
+  to Haiku; `spoochie config --guardian off` turns that off, and with it the hold.
 - **The daemon's local socket has no auth.** Any process running as your user can ask it
   to inject text into your sessions. On a single-user machine that's the same boundary as
   your own processes; on a shared box it isn't.
@@ -323,10 +331,10 @@ What you should know:
 
 Everything goes through the **DM between the bot and each person**. That DM is the same
 channel seen from both sides, so each machine polls exactly one channel for what arrives,
-plus one thread per open spochie.
+plus one thread per open spoochie.
 
 The app needs `chat:write`, `im:write`, `im:read` and `im:history` as bot scopes. That's
-all for the normal path: `spochie invite --to` resolves the newcomer on the inviter's
+all for the normal path: `spoochie invite --to` resolves the newcomer on the inviter's
 side, and the invitation carries both ids, so nobody is looked up in Slack afterwards.
 `users:read` and `users:read.email` (bot scopes) are only needed to invite by email or
 by name instead of by Slack id, and for `@someone` who isn't in your local contacts.
@@ -335,7 +343,7 @@ No user token is needed for anything.
 Alternatives I tried and dropped, with the measurement:
 
 - **Socket Mode**: with several connections from the same app, Slack delivers each event
-  to ONE of them. A spochie for Bob could be grabbed by Alice's daemon.
+  to ONE of them. A spoochie for Bob could be grabbed by Alice's daemon.
 - **Walking your DMs looking for the header**: the first version, and it fell over on the
   first real account. 197 DMs, `conversations.history` is Tier 3, and Slack returned
   `ratelimited` on the second channel.
@@ -354,22 +362,22 @@ up within one poll. For 15 people with two conversations at once that's 25 `hist
 paths and the Claude across opens them under its permissions. Across machines the bot
 uploads them to the thread and the daemon on the other side downloads them to its own
 spool, so what that session receives is a path that exists on **its** disk. 10 MB cap:
-spochie is for clues, not for moving binaries.
+spoochie is for clues, not for moving binaries.
 
 ## The transcript
 
 It republishes itself. The daemon keeps the HTML current but can't publish an Artifact,
 which is a tool of the Claude session, so the republish request rides along with the turn
-that session is already receiving. The one who opened the spochie publishes it.
+that session is already receiving. The one who opened the spoochie publishes it.
 
 ## Checking it works
 
 ```
-spochie selftest     walks the whole loop here, needing nobody and never touching Slack
-spochie doctor       reviews what has to be right in order to deliver
+spoochie selftest     walks the whole loop here, needing nobody and never touching Slack
+spoochie doctor       reviews what has to be right in order to deliver
 ```
 
-`selftest` spins up two fake inboxes and goes through the same stops as a real spochie:
+`selftest` spins up two fake inboxes and goes through the same stops as a real spoochie:
 the approval gate, the round trip, the close. A step that depends on a broken one is
 marked untested, never passed.
 
@@ -379,7 +387,7 @@ arrive and nobody notices.
 
 ## What it doesn't do
 
-- More than two participants. Deliberate: a spochie is a pair.
+- More than two participants. Deliberate: a spoochie is a pair.
 - Linux daemons don't survive a reboot yet. The first hook starts one, which is enough:
   with no session, there's nothing to deliver. macOS gets launchd automatically.
 
@@ -387,10 +395,10 @@ arrive and nobody notices.
 
 ```
 bun test                                # 95 tests, no network
-SPOCHIE_HOME=/tmp/x bun run src/daemon.ts
+SPOOCHIE_HOME=/tmp/x bun run src/daemon.ts
 ```
 
-`SPOCHIE_HOME` isolates all state. It's needed because `os.homedir()` in Bun does **not**
+`SPOOCHIE_HOME` isolates all state. It's needed because `os.homedir()` in Bun does **not**
 honour `$HOME`, so isolating tests by `HOME` doesn't work: they wrote into the real
 `~/.claude`.
 
@@ -408,10 +416,10 @@ src/
   aparte.ts     the Claude on the side: what it may run, its first turn
   selftest.ts   the whole loop, locally
   doctor.ts     what has to be right
-commands/       /spochie and /spochie:join
+commands/       /spoochie and /spoochie:join
 hooks/          SessionStart (fetches and verifies the binary if Bun is missing),
                 UserPromptSubmit (marks the session you are typing in) and SessionEnd
-bin/spochie     runs the verified binary of this version, or Bun over the source
+bin/spoochie     runs the verified binary of this version, or Bun over the source
 scripts/        assistants for the things only a person can do
 ```
 

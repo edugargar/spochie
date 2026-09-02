@@ -4,17 +4,17 @@
  * y un estado local se desincroniza en cuanto alguien cierra el portatil.
  *
  * NO usa Socket Mode. Con varias conexiones de la misma app, Slack entrega cada
- * evento a UNA sola, asi que un spochie para Alex se lo podria quedar el demonio de
+ * evento a UNA sola, asi que un spoochie para Alex se lo podria quedar el demonio de
  * Edu.
  *
- * Y NO recorre tus DMs buscando spochies. Esa fue la primera version y se cayo a la
+ * Y NO recorre tus DMs buscando spoochies. Esa fue la primera version y se cayo a la
  * primera contra una cuenta real: 197 DMs por tick, `conversations.history` es Tier 3,
  * y Slack devolvia `ratelimited` en el segundo canal. Tampoco usa `search.messages`,
  * que resolveria el problema en una llamada pero exige el scope `search:read`.
  *
  * En su lugar todo el trafico vive en el DM entre el BOT y cada persona. Ese DM es el
  * mismo canal visto desde los dos lados (verificado con un DM real), asi que cada
- * demonio consulta exactamente UN canal para lo que le llega, mas un hilo por spochie
+ * demonio consulta exactamente UN canal para lo que le llega, mas un hilo por spoochie
  * abierto. Postea y lee el bot; el token de usuario solo se usa
  * para buscar personas, que es lo unico que el bot no puede hacer.
  */
@@ -25,12 +25,12 @@ import { subir, bajar } from "./files.ts";
 
 const API = "https://slack.com/api/";
 /** Cabecera legible por maquina que va en el primer mensaje del hilo. Es lo que
- *  permite al demonio del otro lado reconocer un spochie entre sus DMs. */
+ *  permite al demonio del otro lado reconocer un spoochie entre sus DMs. */
 /** El sobre de maquina va en `metadata` de Slack, no en el texto.
- *  Antes iba como un bloque `spochie:v1 {...}` visible al final del mensaje: feo para
+ *  Antes iba como un bloque `spoochie:v1 {...}` visible al final del mensaje: feo para
  *  quien lee, y editable por cualquiera. `metadata` vuelve intacto en history y en
  *  replies (verificado) y no se ve. */
-export const EVENT = "spochie";
+export const EVENT = "spoochie";
 
 export type Envelope = {
   v: 1;
@@ -63,7 +63,7 @@ export function chunk(text: string, size = 2800, max = 12): string[] {
   return out.length > max ? [...out.slice(0, max - 1), "_(sigue en el transcript)_"] : out;
 }
 
-/** Un id de spochie es corto y de letras y numeros: acaba siendo nombre de fichero. */
+/** Un id de spoochie es corto y de letras y numeros: acaba siendo nombre de fichero. */
 export const ID_VALIDO = /^[A-Za-z0-9_-]{1,32}$/;
 
 export function envelopeOf(msg: any): Envelope | null {
@@ -81,10 +81,10 @@ export function noticeText(t: T.Thread, rendered: string): string {
     return `:white_check_mark: ${quien} ha aceptado. El tunel esta abierto y muere solo tras 10 min de silencio.`;
   }
   if (rendered.includes("cerrado (")) {
-    return `:lock: Spochie cerrado${t.closeReason ? `: ${t.closeReason}` : ""}.`;
+    return `:lock: Spoochie cerrado${t.closeReason ? `: ${t.closeReason}` : ""}.`;
   }
   // Cualquier otra cosa: fuera las lineas de instrucciones internas.
-  return rendered.split("\n").filter(l => !l.startsWith("spochie ") && !l.includes("--- Esto viene")).join("\n").trim();
+  return rendered.split("\n").filter(l => !l.startsWith("spoochie ") && !l.includes("--- Esto viene")).join("\n").trim();
 }
 
 type Block = Record<string, unknown>;
@@ -134,13 +134,13 @@ function contextLine(t: T.Thread): string | null {
 export function inviteBlocks(t: T.Thread): Block[] {
   const c = contextLine(t);
   const blocks: Block[] = [
-    { type: "header", text: { type: "plain_text", text: `Spochie de ${nameOf(t.from)}`.slice(0, 150), emoji: true } },
+    { type: "header", text: { type: "plain_text", text: `Spoochie de ${nameOf(t.from)}`.slice(0, 150), emoji: true } },
     sec(`*${t.subject}*`),
   ];
   if (c) blocks.push(ctx(c));
   for (const c of chunk(t.messages[0]?.text ?? "")) blocks.push(body(c));
   blocks.push({ type: "divider" });
-  blocks.push(sec(`<@${t.to.slackUser}> contesta en este hilo para aceptarlo, o dile a tu Claude:\n\`spochie accept ${t.id}\``));
+  blocks.push(sec(`<@${t.to.slackUser}> contesta en este hilo para aceptarlo, o dile a tu Claude:\n\`spoochie accept ${t.id}\``));
   blocks.push(ctx("Caduca sin aceptar en 4 h  ·  una vez abierto, muere tras 10 min de silencio"));
   return blocks;
 }
@@ -175,7 +175,7 @@ export function noticeBlocks(t: T.Thread, rendered: string): { blocks: Block[]; 
   } else if (rendered.includes("cerrado (")) {
     text = `:lock: Cerrado${t.closeReason ? ` · ${t.closeReason}` : ""}`;
   } else {
-    text = rendered.split("\n").filter(l => !l.startsWith("spochie ") && !l.includes("--- Esto viene")).join("\n").trim();
+    text = rendered.split("\n").filter(l => !l.startsWith("spoochie ") && !l.includes("--- Esto viene")).join("\n").trim();
   }
   return { blocks: [ctx(text)], text };
 }
@@ -212,7 +212,7 @@ type OnOrden = (t: T.Thread, orden: "suelta" | "descarta") => Promise<void>;
  * Cada cuanto mira el buzon un demonio, segun cuantos demonios comparten la app.
  *
  * `conversations.history` es Tier 3: unas 50 llamadas por minuto para toda la app. La
- * mitad, 25, se reparte entre los demonios para descubrir spochies nuevos; la otra
+ * mitad, 25, se reparte entre los demonios para descubrir spoochies nuevos; la otra
  * mitad queda para el que acaba de abrir uno y para no ir al limite. Con 2 personas
  * salen 12 al minuto cada uno, que es el suelo de 5 s; con 4, 10 s; con 15, 36 s; con
  * 25, 60 s. El equipo son los contactos de la agenda mas uno. Si Slack devuelve 429
@@ -228,7 +228,7 @@ export class SlackBridge {
 
   private botUserId: string | null = null;
   private myDm: string | null = null;
-  /** Al arrancar se mira atras lo mismo que dura la cola de pendientes: un spochie
+  /** Al arrancar se mira atras lo mismo que dura la cola de pendientes: un spoochie
    *  mas viejo que eso ya ha caducado, y uno de hace un minuto tiene que aparecer
    *  aunque el demonio se haya levantado despues. */
   private inboxCursor = String(Math.round((Date.now() - T.PENDING_TTL_MS) / 1000));
@@ -354,7 +354,7 @@ export class SlackBridge {
     this.firma(env, t.messages[0]?.text ?? "");
     const post = await this.call("chat.postMessage", {
       channel,
-      text: `Spochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
+      text: `Spoochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
       blocks: inviteBlocks(t),
       metadata: { event_type: EVENT, event_payload: env },
       unfurl_links: false,
@@ -454,7 +454,7 @@ export class SlackBridge {
   private ultimaMirada = new Map<string, number>();
   private ultimoDescubrir = 0;
 
-  /** Lo que gasta este demonio ahora mismo, para poder decirlo en `spochie doctor`. */
+  /** Lo que gasta este demonio ahora mismo, para poder decirlo en `spoochie doctor`. */
   presupuesto(): { hilos: number; historyPorMin: number; repliesPorMin: number } {
     const vivos = T.all().filter(t => t.state !== "closed" && t.slack).length;
     const cadencia = cadenciaDescubrir(Object.keys(Cfg.load().contacts ?? {}).length + 1);
@@ -531,7 +531,7 @@ export class SlackBridge {
 
       const env = envelopeOf(rep);
       if (env) {
-        // Lo postea spochie. Los dos lados postean como el bot, asi que quien habla
+        // Lo postea spoochie. Los dos lados postean como el bot, asi que quien habla
         // solo se sabe por el sobre. Sin esto un demonio se salta al otro.
         if (env.from === this.me) continue;
         if (env.kind === "accept") { await this.onRemoteAccept(t, "en la otra maquina"); continue; }
@@ -586,7 +586,7 @@ export class SlackBridge {
     }
   }
 
-  /** Un aviso de spochie en el hilo, con sobre para que ningun demonio lo tome por una persona. */
+  /** Un aviso de spoochie en el hilo, con sobre para que ningun demonio lo tome por una persona. */
   async aviso(t: T.Thread, texto: string) {
     if (!t.slack) return;
     await this.avisoEn(t.slack.channel, t.slack.ts, texto);
@@ -615,7 +615,7 @@ export class SlackBridge {
     return t.to.slackUser === this.me ? t.to.sessionId : t.from.sessionId;
   }
 
-  /** Descubre spochies que me han abierto. Una sola llamada, a un solo canal. */
+  /** Descubre spoochies que me han abierto. Una sola llamada, a un solo canal. */
   private async discover() {
     const ch = await this.inbox();
     if (!ch) return;
@@ -635,13 +635,13 @@ export class SlackBridge {
         await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:no_entry: esta invitacion dice venir de ${env.fromName ?? env.from} pero la firma no es suya. Descartada.`);
         continue;
       }
-      // Un spochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
+      // Un spoochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
       if (T.yaVisto(env.id)) continue;
       await this.materialize(env, ch, msg.thread_ts ?? msg.ts, bodyFromBlocks(msg.blocks));
     }
   }
 
-  /** Crea el hilo local de un spochie que me llega de otra maquina. Queda
+  /** Crea el hilo local de un spoochie que me llega de otra maquina. Queda
    *  pendiente hasta que mi humano acepte: la invitacion la entrega el demonio
    *  a la sesion local que encaje, o al registrarse la siguiente. */
   private async materialize(env: Envelope, channel: string, ts: string, cuerpo = "") {

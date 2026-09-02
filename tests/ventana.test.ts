@@ -7,15 +7,15 @@ import { join } from "node:path";
 import { scriptVentana } from "../src/aparte.ts";
 
 /**
- * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOCHIE_VENTANA apunta a un
+ * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOOCHIE_VENTANA apunta a un
  * "abridor" que corre el script en segundo plano, y el `claude` del PATH es uno falso
  * que hace lo que haria el hook SessionStart de la ventana (registrar su sesion con un
  * socket) y se queda vivo. Con eso se prueba lo que fallo en e856: que la conversacion
  * va a la ventana por su socket, que a la sesion interactiva no le llega nada mas, que
  * un segundo accept/take en el mismo repo no abre otra ventana, y que cerrar la ventana
- * cierra el spochie.
+ * cierra el spoochie.
  */
-const HOME = mkdtempSync(join(tmpdir(), "spochie-vent-"));
+const HOME = mkdtempSync(join(tmpdir(), "spoochie-vent-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
 const VENTANAS = join(HOME, "ventanas.txt");
 const REPO_A = mkdtempSync(join(tmpdir(), "repo-va-")), REPO_B = mkdtempSync(join(tmpdir(), "repo-vb-"));
@@ -59,13 +59,13 @@ test("el script de la ventana entra en el repo, lleva la correa y las variables 
   const t: any = { id: "w1", subject: "el boton", messages: [] };
   const s = scriptVentana(t, "/tmp/mi repo", "aparte-w1-x");
   expect(s).toContain("cd '/tmp/mi repo'");
-  expect(s).toContain("SPOCHIE_APARTE='w1'");
-  expect(s).toContain("SPOCHIE_APARTE_SESION='aparte-w1-x'");
+  expect(s).toContain("SPOOCHIE_APARTE='w1'");
+  expect(s).toContain("SPOOCHIE_APARTE_SESION='aparte-w1-x'");
   expect(s).toContain("--allowedTools");
   expect(s).not.toMatch(/Edit|Write/);
 });
 
-test("la conversacion va a la ventana por su socket; la sesion no ve nada mas; no se abre dos veces; cerrarla cierra el spochie", async () => {
+test("la conversacion va a la ventana por su socket; la sesion no ve nada mas; no se abre dos veces; cerrarla cierra el spoochie", async () => {
   const bin = mkdtempSync(join(tmpdir(), "sp-claude-vent-"));
   // El abridor: lo que hace iTerm de verdad. Corre el script y vuelve.
   writeFileSync(join(bin, "abridor"), `#!/bin/sh
@@ -73,11 +73,11 @@ nohup /bin/sh "$1" >/dev/null 2>&1 &
 `);
   // El claude falso de la ventana: se registra como lo haria el hook y se queda vivo.
   writeFileSync(join(bin, "claude"), `#!/bin/sh
-echo "$SPOCHIE_APARTE_SESION $PWD" >> "$SPOCHIE_HOME/ventanas.txt"
-cat > "$SPOCHIE_HOME/sessions/$SPOCHIE_APARTE_SESION.json" <<JSON
-{"sessionId":"$SPOCHIE_APARTE_SESION","name":"aparte-$SPOCHIE_APARTE","cwd":"$PWD","socket":"${V.sock}","token":"t","pid":$$,"startedAt":$(date +%s)000,"aparte":"$SPOCHIE_APARTE"}
+echo "$SPOOCHIE_APARTE_SESION $PWD" >> "$SPOOCHIE_HOME/ventanas.txt"
+cat > "$SPOOCHIE_HOME/sessions/$SPOOCHIE_APARTE_SESION.json" <<JSON
+{"sessionId":"$SPOOCHIE_APARTE_SESION","name":"aparte-$SPOOCHIE_APARTE","cwd":"$PWD","socket":"${V.sock}","token":"t","pid":$$,"startedAt":$(date +%s)000,"aparte":"$SPOOCHIE_APARTE"}
 JSON
-chmod 600 "$SPOCHIE_HOME/sessions/$SPOCHIE_APARTE_SESION.json"
+chmod 600 "$SPOOCHIE_HOME/sessions/$SPOOCHIE_APARTE_SESION.json"
 sleep 60
 `);
   chmodSync(join(bin, "claude"), 0o755); chmodSync(join(bin, "abridor"), 0o755);
@@ -90,14 +90,14 @@ sleep 60
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOCHIE_HOME: HOME, SPOCHIE_VENTANA: join(bin, "abridor") }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_VENTANA: join(bin, "abridor") }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
 
   const open = await rpc({ op: "open", sessionId: "VA", to: "repo-vb", subject: "el boton", body: "mira tu Button" });
   expect(open.ok).toBe(true);
-  expect(await hasta(() => B.got.some(x => x.includes(`spochie accept ${open.id}`)))).toBe(true);
+  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
   const antesB = B.got.length;
 
   const acc = await rpc({ op: "accept", sessionId: "VB", id: open.id, by: "Edu" });
@@ -132,7 +132,7 @@ sleep 60
   // A la sesion B no le ha llegado nada desde la invitacion.
   expect(B.got.slice(antesB)).toEqual([]);
 
-  // Cerrar la ventana (su hook SessionEnd) cierra el spochie y avisa al otro lado.
+  // Cerrar la ventana (su hook SessionEnd) cierra el spoochie y avisa al otro lado.
   const sid = ventanas()[0].split(" ")[0];
   const fin = await rpc({ op: "session-end", sessionId: sid });
   expect(fin.closed).toEqual([open.id]);

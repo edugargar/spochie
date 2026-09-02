@@ -7,7 +7,7 @@
  * El hook sigue sirviendo de red: si no hay latido, arranca lo que haga falta.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync, openSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync, openSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,16 +16,16 @@ import { ROOT, DAEMON_LOG, DAEMON_LOCK, ensureDirs } from "./paths.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** `bun build --compile` mete los ficheros en un sistema virtual. Si estamos ahi,
- *  el ejecutable es spochie mismo y el demonio se arranca como subcomando. */
+ *  el ejecutable es spoochie mismo y el demonio se arranca como subcomando. */
 export const COMPILADO = import.meta.path.includes("$bunfs");
 
 export const LATIDO = join(ROOT, "latido");
 export const LATIDO_MS = 20_000;
-export const LABEL = "dev.spochie.spochied";
+export const LABEL = "dev.spoochie.spoochied";
 
 export function comandoDemonio(): string[] {
   // Para las pruebas: un demonio que no arranca, a proposito y sin depender del PATH.
-  if (process.env.SPOCHIE_DAEMON_CMD) return process.env.SPOCHIE_DAEMON_CMD.split(" ");
+  if (process.env.SPOOCHIE_DAEMON_CMD) return process.env.SPOOCHIE_DAEMON_CMD.split(" ");
   if (COMPILADO) return [process.execPath, "daemon"];
   const bun = (() => { try { return execFileSync("which", ["bun"], { encoding: "utf8" }).trim(); } catch { return "bun"; } })();
   return [bun, "run", join(HERE, "daemon.ts")];
@@ -50,7 +50,7 @@ function plistDeseado(): string {
   const args = comandoDemonio().map(a => `      <string>${a}</string>`).join("\n");
   const path = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
   return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- Lo escribe spochie (register / join). Se reescribe solo si cambia la ruta del plugin. -->
+<!-- Lo escribe spoochie (register / join). Se reescribe solo si cambia la ruta del plugin. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key>
@@ -74,15 +74,15 @@ const uid = () => { try { return execFileSync("id", ["-u"], { encoding: "utf8" }
 const launchctl = (args: string[]) => { try { execFileSync("launchctl", args, { stdio: "ignore" }); return true; } catch { return false; } };
 
 export function launchdInstalado(): boolean {
-  return process.platform === "darwin" && existsSync(plistPath()) && !process.env.SPOCHIE_HOME;
+  return process.platform === "darwin" && existsSync(plistPath()) && !process.env.SPOOCHIE_HOME;
 }
 
 /** Deja el demonio bajo launchd. Idempotente: si el plist ya dice lo mismo, no toca
  *  nada. Si cambia (el plugin se actualizo y la ruta es otra), lo recarga. Con
- *  SPOCHIE_HOME puesto no se instala nada: eso es un laboratorio, no tu maquina. */
-/** La version del plugin que hay en una ruta de la cache (.../spochie/0.5.1/...). */
+ *  SPOOCHIE_HOME puesto no se instala nada: eso es un laboratorio, no tu maquina. */
+/** La version del plugin que hay en una ruta de la cache (.../spoochie/0.5.1/...). */
 export function versionDeRuta(texto: string): string | null {
-  return /\/spochie\/(\d+\.\d+\.\d+)\//.exec(texto)?.[1] ?? null;
+  return /\/spoochie\/(\d+\.\d+\.\d+)\//.exec(texto)?.[1] ?? null;
 }
 export function masNueva(a: string, b: string): boolean {
   const x = a.split(".").map(Number), y = b.split(".").map(Number);
@@ -90,9 +90,20 @@ export function masNueva(a: string, b: string): boolean {
   return false;
 }
 
+/** El LaunchAgent de cuando esto se llamaba spochie: si sigue ahi, corre un demonio
+ *  viejo que lee el mismo Slack y entregaria todo dos veces. Se apaga y se borra. */
+export function retirarLaunchdViejo(): boolean {
+  const viejo = join(homedir(), "Library", "LaunchAgents", "dev.spochie.spochied.plist");
+  if (!existsSync(viejo)) return false;
+  launchctl(["bootout", `gui/${uid()}/dev.spochie.spochied`]);
+  try { unlinkSync(viejo); } catch {}
+  return true;
+}
+
 export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" {
-  if (process.platform !== "darwin" || process.env.SPOCHIE_HOME) return "no";
+  if (process.platform !== "darwin" || process.env.SPOOCHIE_HOME) return "no";
   ensureDirs();
+  if (retirarLaunchdViejo()) console.error("spoochie: apagado y retirado el demonio antiguo (spochie)");
   const deseado = plistDeseado();
   const p = plistPath();
   const habia = existsSync(p) ? readFileSync(p, "utf8") : null;

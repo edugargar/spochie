@@ -6,7 +6,7 @@
  * porque quien decide es quien tiene el contexto. Que pida actuar (ejecutar algo,
  * tocar ficheros o permisos, mandar secretos o ficheros, abrir enlaces) se RETIENE:
  * no entra en la sesion hasta que el humano receptor diga "suelta" en el hilo o
- * `spochie release`. Un Claude que recibe una orden convincente puede seguirla; un
+ * `spoochie release`. Un Claude que recibe una orden convincente puede seguirla; un
  * humano que la ve en Slack, no. Se juzga al recibir y no al enviar, porque el que
  * envia no tiene por que ser de fiar.
  *

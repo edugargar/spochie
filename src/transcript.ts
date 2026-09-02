@@ -1,11 +1,11 @@
 /**
- * El transcript de un spochie, en HTML, listo para publicarse como Artifact.
+ * El transcript de un spoochie, en HTML, listo para publicarse como Artifact.
  *
  * El demonio genera el fichero; NO lo publica. Publicar un Artifact es una
  * herramienta de la sesion de Claude, no de un proceso suelto, asi que el
  * demonio deja el HTML en disco y la CLI le dice a Claude que lo publique y
- * que devuelva la URL con `spochie transcript <id> --url <url>`.
- * El Artifact pertenece a quien abre el spochie y se comparte con el otro lado:
+ * que devuelva la URL con `spoochie transcript <id> --url <url>`.
+ * El Artifact pertenece a quien abre el spoochie y se comparte con el otro lado:
  * dos transcripts del mismo hilo serian dos versiones de la misma conversacion.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -166,7 +166,7 @@ export function renderHtml(t: Thread): string {
 ${t.messages.map(m => msgHtml(t, m)).join("\n")}
   </div>
   <footer>
-    <span class="id">spochie ${esc(t.id)}</span>
+    <span class="id">spoochie ${esc(t.id)}</span>
     ${t.closeReason ? `<span>cerrado: ${esc(t.closeReason)}</span>` : "<span>en curso</span>"}
   </footer>
 </main>`;

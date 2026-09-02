@@ -1,17 +1,17 @@
 {
-  "name": "spochie",
-  "version": "0.5.4",
+  "name": "spoochie",
+  "version": "0.6.0",
   "private": true,
   "license": "MIT",
   "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread",
   "type": "module",
   "bin": {
-    "spochie": "./src/cli.ts"
+    "spoochie": "./src/cli.ts"
   },
   "scripts": {
     "test": "bun test",
     "daemon": "bun run src/daemon.ts",
-    "spochie": "bun run src/cli.ts"
+    "spoochie": "bun run src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22"

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 
 /**
- * Una sesion encaja con un spochie que llega de fuera si su checkout conoce la rama
+ * Una sesion encaja con un spoochie que llega de fuera si su checkout conoce la rama
  * del sobre. Sin rama no hay con que decidir, y no se reparte a ciegas: se queda en
  * cola hasta que arranque una sesion que si encaje, o hasta que caduquen las 4h.
  */

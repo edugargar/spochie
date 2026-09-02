@@ -1,12 +1,12 @@
 /**
  * Comprueba el bucle entero en esta maquina, sin necesitar a otra persona.
  *
- * Existe para el dia de la instalacion: alguien acaba de poner spochie y quiere saber
+ * Existe para el dia de la instalacion: alguien acaba de poner spoochie y quiere saber
  * si funciona antes de escribirle a un companero. Levanta dos buzones falsos, abre un
- * spochie de uno a otro y recorre las mismas paradas que un spochie de verdad: la
+ * spoochie de uno a otro y recorre las mismas paradas que un spoochie de verdad: la
  * puerta de aprobacion, la ida y vuelta, el cierre y el aviso al otro lado.
  *
- * NO toca Slack ni tu estado real: corre en su propio SPOCHIE_HOME temporal.
+ * NO toca Slack ni tu estado real: corre en su propio SPOOCHIE_HOME temporal.
  */
 import net from "node:net";
 import { spawn } from "node:child_process";
@@ -22,7 +22,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function buzon(nombre: string) {
-  const sock = join(mkdtempSync(join(tmpdir(), `spochie-st-${nombre}-`)), "s.sock");
+  const sock = join(mkdtempSync(join(tmpdir(), `spoochie-st-${nombre}-`)), "s.sock");
   const recibido: string[] = [];
   const server = net.createServer(c => {
     let buf = "";
@@ -42,7 +42,7 @@ function buzon(nombre: string) {
 
 export async function selftest(): Promise<Paso[]> {
   const pasos: Paso[] = [];
-  const home = mkdtempSync(join(tmpdir(), "spochie-selftest-"));
+  const home = mkdtempSync(join(tmpdir(), "spoochie-selftest-"));
   const A = buzon("a"), B = buzon("b");
   let demonio: ReturnType<typeof spawn> | null = null;
 
@@ -60,7 +60,7 @@ export async function selftest(): Promise<Paso[]> {
   const saltar = (que: string) => { pasos.push({ ok: false, que, detalle: "no se ha llegado a probar" }); };
 
   try {
-    const entorno = { ...process.env, SPOCHIE_HOME: home };
+    const entorno = { ...process.env, SPOOCHIE_HOME: home };
     // El registro se escribe a mano: paths.ts fija su raiz al cargarse, asi que
     // cambiar la variable de entorno a mitad de proceso no la mueve.
     mkdirSync(join(home, "sessions"), { recursive: true, mode: 0o700 });
@@ -84,7 +84,7 @@ export async function selftest(): Promise<Paso[]> {
     pasos.push({ ok: pong.ok === true, que: "el demonio arranca y contesta", detalle: `pid ${pong.pid}` });
 
     const abierto = await rpc({ op: "open", sessionId: "st-a", to: "st-b", subject: "prueba de instalacion", body: "si lees esto, el buzon funciona" });
-    pasos.push({ ok: abierto.ok && abierto.delivered === true, que: "la invitacion llega al otro buzon", detalle: abierto.ok ? `spochie ${abierto.id}` : abierto.error });
+    pasos.push({ ok: abierto.ok && abierto.delivered === true, que: "la invitacion llega al otro buzon", detalle: abierto.ok ? `spoochie ${abierto.id}` : abierto.error });
     if (!abierto.ok) {
       for (const q of ["el sobre dice como aceptar", "la puerta: no se contesta sin aceptar", "solo acepta quien recibe",
                        "el humano receptor abre el tunel", "ida y vuelta", "no se mandan mensajes vacios",
@@ -94,7 +94,7 @@ export async function selftest(): Promise<Paso[]> {
     const id = abierto.id;
 
     pasos.push({
-      ok: B.recibido.some(x => x.includes(`spochie accept ${id}`)),
+      ok: B.recibido.some(x => x.includes(`spoochie accept ${id}`)),
       que: "el sobre dice como aceptar",
       detalle: B.recibido.length ? "la invitacion trae el comando" : "no llego nada",
     });

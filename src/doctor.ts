@@ -1,5 +1,5 @@
 /**
- * Un repaso de todo lo que tiene que estar bien para que un spochie llegue.
+ * Un repaso de todo lo que tiene que estar bien para que un spoochie llegue.
  *
  * Existe porque los fallos de esta herramienta son silenciosos por naturaleza: un token
  * caducado, un fichero con permisos flojos o un demonio muerto no dan error, solo hacen
@@ -61,7 +61,7 @@ export async function revisar(): Promise<Chequeo[]> {
   if (socketsRotos.length) out.push({ ok: false, que: "buzones", detalle: `${socketsRotos.length} sesiones sin socket` });
 
   if (!c.slack) {
-    out.push({ ok: "aviso", que: "Slack", detalle: "sin configurar: spochie solo funciona en esta maquina" });
+    out.push({ ok: "aviso", que: "Slack", detalle: "sin configurar: spoochie solo funciona en esta maquina" });
   } else {
     const user = Cfg.slackToken(c), bot = Cfg.slackBotToken(c);
     const yo = user ? await whoIs(user) : null;
@@ -72,7 +72,7 @@ export async function revisar(): Promise<Chequeo[]> {
     out.push({ ok: Boolean(elBot), que: "token de bot", detalle: elBot ? `${elBot.user}` : "no vale o falta" });
     if (elBot && !user) {
       // Sin token de usuario, buscar personas depende de que la app tenga users:read
-      // de bot. Si no lo tiene, abrir un spochie por nombre o email falla en el unico
+      // de bot. Si no lo tiene, abrir un spoochie por nombre o email falla en el unico
       // sitio donde duele: al escribirle a alguien por primera vez.
       const r = await fetch("https://slack.com/api/users.list?limit=1", { headers: { authorization: `Bearer ${bot}` } }).then(x => x.json()).catch(() => ({ ok: false }));
       out.push({
@@ -93,7 +93,7 @@ export async function revisar(): Promise<Chequeo[]> {
   const abiertos = T.all().filter(t => t.state !== "closed");
   out.push({
     ok: true,
-    que: "spochies",
+    que: "spoochies",
     detalle: `${abiertos.length} vivos, ${T.all().length} en total en esta maquina`,
   });
 
@@ -113,7 +113,7 @@ export async function revisar(): Promise<Chequeo[]> {
 
   if (existsSync(THREADS_DIR)) {
     const viejos = T.all().filter(t => t.state === "closed" && Date.now() - (t.closedAt ?? 0) > 30 * 24 * 3600 * 1000);
-    if (viejos.length) out.push({ ok: "aviso", que: "limpieza", detalle: `${viejos.length} spochies cerrados hace mas de un mes` });
+    if (viejos.length) out.push({ ok: "aviso", que: "limpieza", detalle: `${viejos.length} spoochies cerrados hace mas de un mes` });
   }
 
   return out;

@@ -4,11 +4,11 @@ import { limpiarCadena, leerInvitacion } from "../src/alta.ts";
 const blob = Buffer.from(JSON.stringify({ b: "xoxb-" + "z".repeat(40), t: "Equipo" })).toString("base64url");
 
 test("la cadena se saca del comando entero pegado", () => {
-  expect(limpiarCadena(`spochie join ${blob} --email ana@example.com`)).toBe(blob);
+  expect(limpiarCadena(`spoochie join ${blob} --email ana@example.com`)).toBe(blob);
 });
 
 test("la cadena se saca de la barra del plugin y de las comillas de Slack", () => {
-  expect(limpiarCadena("/spochie:join `" + blob + "`")).toBe(blob);
+  expect(limpiarCadena("/spoochie:join `" + blob + "`")).toBe(blob);
 });
 
 test("la cadena suelta vale tal cual", () => {
@@ -16,7 +16,7 @@ test("la cadena suelta vale tal cual", () => {
 });
 
 test("sin cadena no se inventa una", () => {
-  expect(limpiarCadena("spochie join --email ana@example.com")).toBeNull();
+  expect(limpiarCadena("spoochie join --email ana@example.com")).toBeNull();
   expect(limpiarCadena("")).toBeNull();
 });
 
@@ -53,9 +53,9 @@ test("un destinatario que no parece un id de Slack se ignora", () => {
 test("el DM lleva los cuatro pasos y la cadena entera", () => {
   const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40) });
   const t = textoInvitacion(blob, "Edu");
-  expect(t).toContain("/plugin marketplace add edugargar/spochie");
-  expect(t).toContain("/plugin install spochie@edugargar");
-  expect(t).toContain(`/spochie:join ${blob}`);
+  expect(t).toContain("/plugin marketplace add edugargar/spoochie");
+  expect(t).toContain("/plugin install spoochie@edugargar");
+  expect(t).toContain(`/spoochie:join ${blob}`);
 });
 
 test("la agenda resuelve @nombre sin distinguir mayusculas ni espacios", () => {

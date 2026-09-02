@@ -183,7 +183,7 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────
-# Alta de una persona en spochie. Lo corre quien se instala, en su maquina.
+# Alta de una persona en spoochie. Lo corre quien se instala, en su maquina.
 #
 # Antes esto eran cinco pasos, con dos tokens copiados a mano de una pantalla de
 # Slack a la que hace falta acceso de admin. Sobraba: el token de usuario solo
@@ -191,14 +191,14 @@ finish() {
 # manda una linea y esto la pega.
 
 TOTAL_STAGES=4
-SPOCHIE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-sp() { bun run "$SPOCHIE/src/cli.ts" "$@"; }
+SPOOCHIE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+sp() { bun run "$SPOOCHIE/src/cli.ts" "$@"; }
 
-banner "spochie — darte de alta"
+banner "spoochie — darte de alta"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Requisitos"
-say "spochie necesita Bun y una version de Claude Code con buzon de sesion."
+say "spoochie necesita Bun y una version de Claude Code con buzon de sesion."
 falta=0
 if command -v bun >/dev/null 2>&1; then step "bun $(bun --version)"; else step "FALTA bun — https://bun.sh"; falta=1; fi
 if command -v claude >/dev/null 2>&1; then step "claude $(claude --version 2>/dev/null | head -1)"; else step "FALTA claude"; falta=1; fi
@@ -212,17 +212,17 @@ pause
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "Pegar la invitacion"
-say "Quien te da de alta ha corrido 'spochie invite' y te ha pasado una linea que"
-say "empieza por 'spochie join'. Pegala entera aqui, con su --email o su --user."
+say "Quien te da de alta ha corrido 'spoochie invite' y te ha pasado una linea que"
+say "empieza por 'spoochie join'. Pegala entera aqui, con su --email o su --user."
 say ""
 say "No hace falta que instales nada en Slack ni que tengas ningun token tuyo:"
 say "la invitacion trae el del bot, que es de la app y no de nadie."
 say ""
 ask LINEA "Pega la linea completa:"
-LINEA="${LINEA#spochie }"
+LINEA="${LINEA#spoochie }"
 case "$LINEA" in
   join\ *) : ;;
-  *) say ""; say "Eso no parece una invitacion. Tiene que empezar por 'spochie join'."; exit 1 ;;
+  *) say ""; say "Eso no parece una invitacion. Tiene que empezar por 'spoochie join'."; exit 1 ;;
 esac
 # shellcheck disable=SC2086
 sp $LINEA || { say ""; say "No ha entrado. Pide una invitacion nueva y vuelve a intentarlo."; exit 1; }
@@ -230,15 +230,15 @@ pause
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
 stage "Engancharlo a tus sesiones de Claude"
-say "spochie se registra solo al arrancar una sesion, con un hook. Con el plugin"
+say "spoochie se registra solo al arrancar una sesion, con un hook. Con el plugin"
 say "no hay que tocar ningun fichero a mano."
 say ""
-step "En Claude Code:  /plugin marketplace add edugargar/spochie"
-step "Y despues:       /plugin install spochie@edugargar"
+step "En Claude Code:  /plugin marketplace add edugargar/spoochie"
+step "Y despues:       /plugin install spoochie@edugargar"
 say ""
 say "Si prefieres no usar el marketplace, anade a tu ~/.claude/settings.json:"
-say "  \"SessionStart\": [{\"hooks\":[{\"type\":\"command\",\"command\":\"bun run $SPOCHIE/src/cli.ts register\"}]}]"
-say "  \"SessionEnd\":   [{\"hooks\":[{\"type\":\"command\",\"command\":\"bun run $SPOCHIE/src/cli.ts unregister\"}]}]"
+say "  \"SessionStart\": [{\"hooks\":[{\"type\":\"command\",\"command\":\"bun run $SPOOCHIE/src/cli.ts register\"}]}]"
+say "  \"SessionEnd\":   [{\"hooks\":[{\"type\":\"command\",\"command\":\"bun run $SPOOCHIE/src/cli.ts unregister\"}]}]"
 pause
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
@@ -249,8 +249,8 @@ sp selftest || true
 say ""
 sp doctor || true
 say ""
-say "Cuando alguien te abra un spochie te llegara un DM del bot. Contesta en el hilo"
-say "para aceptarlo, o dile a tu Claude:  spochie accept <id>"
+say "Cuando alguien te abra un spoochie te llegara un DM del bot. Contesta en el hilo"
+say "para aceptarlo, o dile a tu Claude:  spoochie accept <id>"
 say ""
 say "Y para usarlo no tienes que aprenderte comandos: dile a tu Claude en cristiano"
-say "'abre un spochie con Edu sobre el error de guardado del modal'."
+say "'abre un spoochie con Edu sobre el error de guardado del modal'."

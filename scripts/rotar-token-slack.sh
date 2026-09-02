@@ -186,20 +186,20 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 # Rotar el app-level token (xapp-) de la app de Slack.
 #
-# Ojo con quien lo usa: spochie NO usa el appToken, solo el de bot. Lo usa la
+# Ojo con quien lo usa: spoochie NO usa el appToken, solo el de bot. Lo usa la
 # herramienta que tenga Socket Mode con esa app, si la hay: rotarlo la deja sin
-# recibir mensajes hasta que se guarde el nuevo. El fichero va en SPOCHIE_TOKEN_FILE.
+# recibir mensajes hasta que se guarde el nuevo. El fichero va en SPOOCHIE_TOKEN_FILE.
 
 TOTAL_STAGES=4
 ENV_FILE="$(mktemp)"
-CONFIG="${SPOCHIE_TOKEN_FILE:?exporta SPOCHIE_TOKEN_FILE con la ruta del JSON de tokens de tu app}"
+CONFIG="${SPOOCHIE_TOKEN_FILE:?exporta SPOOCHIE_TOKEN_FILE con la ruta del JSON de tokens de tu app}"
 
 banner "Rotar el app-level token de Slack"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Que se rompe y que no"
 say "El token que vas a rotar es el xapp-, el de nivel de aplicacion."
-step "spochie NO lo usa: le basta el de bot (xoxb)."
+step "spoochie NO lo usa: le basta el de bot (xoxb)."
 step "Lo usa quien tenga Socket Mode con esta app. Se queda sordo hasta que guardes el nuevo."
 say ""
 if [[ -f "$CONFIG" ]]; then
@@ -209,7 +209,7 @@ if [[ -f "$CONFIG" ]]; then
     warn "ese fichero esta en $modo y lleva los tres tokens dentro. Lo dejamos en 600 al final."
   fi
 else
-  warn "no encuentro $CONFIG. Pasa la ruta en SPOCHIE_TOKEN_FILE y vuelve."
+  warn "no encuentro $CONFIG. Pasa la ruta en SPOOCHIE_TOKEN_FILE y vuelve."
   exit 1
 fi
 confirm "Seguimos?" || exit 0
@@ -250,7 +250,7 @@ pause
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
 stage "Comprobar los dos lados"
-say "spochie no depende del appToken, pero conviene ver que sigue entero:"
+say "spoochie no depende del appToken, pero conviene ver que sigue entero:"
 bun run "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src/cli.ts" doctor || true
 say ""
 say "Y la herramienta que si lo usa:"
