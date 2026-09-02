@@ -12,6 +12,7 @@ import { DAEMON_SOCK, DAEMON_LOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
 import { liveSessions, findSession, type SessionRecord } from "./registry.ts";
 import * as T from "./threads.ts";
 import { encolar } from "./outbox.ts";
+import { latir, LATIDO_MS } from "./arranque.ts";
 import * as Cfg from "./config.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
@@ -507,6 +508,9 @@ function main() {
   if (alreadyRunning()) { console.error("spochied ya esta corriendo"); process.exit(0); }
   if (existsSync(DAEMON_SOCK)) unlinkSync(DAEMON_SOCK);
   writeFileSync(DAEMON_LOCK, String(process.pid));
+  // El latido es lo unico que distingue un demonio vivo de uno colgado.
+  latir();
+  setInterval(latir, LATIDO_MS).unref();
   slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}));
 
   const server = net.createServer(conn => {

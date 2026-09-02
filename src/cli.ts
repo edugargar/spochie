@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import net from "node:net";
-import { spawn, execFileSync } from "node:child_process";
-import { existsSync, openSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve as rpath } from "node:path";
 import { userInfo } from "node:os";
@@ -34,8 +34,8 @@ async function ensureDaemon() {
   if (existsSync(DAEMON_SOCK)) {
     try { await rpc({ op: "ping" }, 1500); return; } catch {}
   }
-  const out = openSync(DAEMON_LOG, "a");
-  spawn("bun", ["run", join(HERE, "daemon.ts")], { detached: true, stdio: ["ignore", out, out] }).unref();
+  const { arrancarDemonio } = await import("./arranque.ts");
+  arrancarDemonio();
   for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 100));
     try { await rpc({ op: "ping" }, 1000); return; } catch {}
@@ -117,6 +117,10 @@ const USAGE = `spochie - tunel entre sesiones de Claude Code de personas distint
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
 
+  // Como binario compilado no hay `bun run daemon.ts`: el demonio es este mismo
+  // ejecutable con `daemon`. Importarlo lo arranca.
+  if (cmd === "daemon") { await import("./daemon.ts"); return; }
+
   if (cmd === "register") {
     // Con el hook, el evento llega por stdin. A mano desde una terminal no llega nada
     // y leer stdin se quedaba colgado para siempre: el env de la sesion ya trae lo
@@ -139,6 +143,10 @@ async function main() {
       pid: Number(socket.split("/").pop()!.replace(/\.sock$/, "")) || process.ppid,
       startedAt: Date.now(),
     });
+    // En macOS el demonio pasa a launchd, que lo mantiene vivo y lo levanta al
+    // arrancar. Se hace aqui, en cada arranque de sesion, porque la ruta del plugin
+    // cambia con cada version y el plist tiene que seguirla.
+    try { const { instalarLaunchd } = await import("./arranque.ts"); const r = instalarLaunchd(); if (r !== "igual" && r !== "no") console.error(`spochie: demonio ${r} en launchd`); } catch {}
     await ensureDaemon();
     try { await rpc({ op: "claim", sessionId }, 5000); } catch {}
     return;
@@ -286,6 +294,7 @@ async function main() {
     Cfg.save(c);
     if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.claveContacto(datos.i.name)}.`);
     console.log(`Listo. Estas dentro de ${bot!.team} como ${userId}${email ? ` (${email})` : ""}, y el bot es ${bot!.user}.`);
+    try { const { instalarLaunchd } = await import("./arranque.ts"); instalarLaunchd(); } catch {}
     await ensureDaemon();
     await rpc({ op: "slack-reload" }).catch(() => {});
 

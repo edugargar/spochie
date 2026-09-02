@@ -73,7 +73,9 @@ export async function selftest(): Promise<Paso[]> {
     }
     writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, human: "prueba" }), { mode: 0o600 });
 
-    demonio = spawn("bun", ["run", join(HERE, "daemon.ts")], { env: entorno, stdio: "ignore" });
+    const { comandoDemonio } = await import("./arranque.ts");
+    const [cmd, ...args] = comandoDemonio();
+    demonio = spawn(cmd, args, { env: entorno, stdio: "ignore" });
     // Sin este oyente, un bun que no arranca tumba el proceso con un error sin recoger
     // en vez de contarte que el demonio no arranco, que es justo lo que vienes a saber.
     demonio.on("error", () => {});

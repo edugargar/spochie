@@ -26,6 +26,15 @@ export async function revisar(): Promise<Chequeo[]> {
     que: "demonio",
     detalle: existsSync(DAEMON_LOCK) ? `vivo, pid ${(await Bun.file(DAEMON_LOCK).text()).trim()}` : "no esta corriendo",
   });
+  {
+    const { edadLatido, launchdInstalado } = await import("./arranque.ts");
+    const edad = edadLatido();
+    out.push({
+      ok: edad !== null && edad < 90,
+      que: "latido del demonio",
+      detalle: edad === null ? "nunca ha latido" : edad < 90 ? `hace ${Math.round(edad)} s${launchdInstalado() ? ", bajo launchd" : ", arrancado por un hook (muere con el reinicio)"}` : `hace ${Math.round(edad)} s: esta colgado o muerto`,
+    });
+  }
 
   const dirModo = modo(ROOT);
   out.push({
