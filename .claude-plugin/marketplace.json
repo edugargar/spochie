@@ -8,7 +8,7 @@
       "name": "spochie",
       "source": "./",
       "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread.",
-      "version": "0.5.2",
+      "version": "0.5.3",
       "keywords": [
         "slack",
         "colaboracion",
