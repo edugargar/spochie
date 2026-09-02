@@ -55,7 +55,8 @@ export function liveSessions(): SessionRecord[] {
     if (permisosFlojos(p)) { console.error(`spochie: ignoro ${f}, tiene permisos abiertos (chmod 600)`); continue; }
     let rec: SessionRecord;
     try { rec = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
-    if (!alive(rec.pid) || !existsSync(rec.socket)) { try { unlinkSync(p); } catch {} continue; }
+    // Un Claude aparte recibe por stdin del demonio: no tiene socket que comprobar.
+    if (!alive(rec.pid) || (!rec.aparte && !existsSync(rec.socket))) { try { unlinkSync(p); } catch {} continue; }
     out.push(rec);
   }
   return out.sort((a, b) => b.startedAt - a.startedAt);

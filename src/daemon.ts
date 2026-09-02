@@ -9,7 +9,7 @@
 import net from "node:net";
 import { existsSync, unlinkSync, writeFileSync, readFileSync, appendFileSync } from "node:fs";
 import { DAEMON_SOCK, DAEMON_LOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
-import { liveSessions, findSession, type SessionRecord } from "./registry.ts";
+import { liveSessions, findSession, unregister, type SessionRecord } from "./registry.ts";
 import * as T from "./threads.ts";
 import { encolar } from "./outbox.ts";
 import { latir, LATIDO_MS } from "./arranque.ts";
@@ -70,14 +70,11 @@ async function atender(t: T.Thread, cwd: string, primerTurnoExtra?: string): Pro
   const ap = Ap.lanzar(t, cwd);
   apartes.set(t.id, ap);
   ap.child.on("error", e => log("aparte", t.id, "no arranca:", String(e)));
-  ap.child.on("exit", code => { if (apartes.get(t.id) === ap) apartes.delete(t.id); log("aparte", t.id, "termino", code); });
-  let sess: SessionRecord | undefined;
-  for (let i = 0; i < 300 && !sess; i++) {
-    await new Promise(r => setTimeout(r, 100));
-    sess = liveSessions().find(s => s.aparte === t.id);
-    if (ap.child.exitCode !== null) break;
-  }
-  if (!sess) { log("aparte", t.id, "no se registro; mira", `${Ap.APARTE_DIR}/${t.id}.log`); ap.child.kill(); apartes.delete(t.id); return null; }
+  ap.child.on("exit", code => { if (apartes.get(t.id) === ap) apartes.delete(t.id); unregister(ap.sess.sessionId); log("aparte", t.id, "termino", code); });
+  // Un claude que no existe o no arranca muere en el acto; se le da un respiro.
+  await new Promise(r => setTimeout(r, 300));
+  if (ap.child.exitCode !== null) { log("aparte", t.id, "no arranca; mira", `${Ap.APARTE_DIR}/${t.id}.log`); apartes.delete(t.id); unregister(ap.sess.sessionId); return null; }
+  const sess = ap.sess;
   const fresco = T.load(t.id) ?? t;
   fresco.to = { ...fresco.to, sessionId: sess.sessionId, name: sess.name, cwd: sess.cwd, human: Cfg.load().human ?? fresco.to.human };
   T.save(fresco);

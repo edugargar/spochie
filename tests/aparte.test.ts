@@ -7,11 +7,9 @@ import { join } from "node:path";
 import { herramientasPermitidas, primerTurno } from "../src/aparte.ts";
 
 /**
- * El Claude aparte de verdad es `claude -p`. Aqui hay uno falso en el PATH que hace
- * lo que el demonio necesita de el: registrarse como sesion con SPOCHIE_APARTE (lo que
- * en la vida real hace el hook SessionStart) y apuntar cada turno que le entra por
- * stdin. Con eso se prueba el reparto: el aparte recibe la conversacion, la sesion
- * interactiva solo el aviso.
+ * El Claude aparte de verdad es `claude -p`. Aqui hay uno falso en el PATH que apunta
+ * cada turno que le entra por stdin. Con eso se prueba el reparto: el aparte recibe la
+ * conversacion, la sesion interactiva solo el aviso. El registro lo hace el demonio.
  */
 const HOME = mkdtempSync(join(tmpdir(), "spochie-ap-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
@@ -64,14 +62,10 @@ test("el aparte solo puede leer, hablar por el tunel y cerrar", () => {
 test("al aceptar, la conversacion va al Claude aparte y la sesion solo recibe el aviso", async () => {
   const bin = mkdtempSync(join(tmpdir(), "sp-claude-ap-"));
   writeFileSync(join(bin, "claude"), `#!/bin/sh
-# Se registra como haria el hook (el "socket" es un fichero que existe: el registro exige
-# uno, y aqui la entrega va por stdin) y apunta lo que le llega.
-mkdir -p "$SPOCHIE_HOME/sessions"
-printf '{"sessionId":"ap-%s","name":"aparte-%s","cwd":"%s","socket":"%s/latido","token":"t","pid":%s,"startedAt":%s,"aparte":"%s"}' \\
-  "$SPOCHIE_APARTE" "$SPOCHIE_APARTE" "$PWD" "$SPOCHIE_HOME" "$$" "$(date +%s)000" "$SPOCHIE_APARTE" > "$SPOCHIE_HOME/sessions/ap-$SPOCHIE_APARTE.json"
-chmod 600 "$SPOCHIE_HOME/sessions/ap-$SPOCHIE_APARTE.json"
+# El registro lo hace el demonio al lanzarlo. Aqui solo se apunta lo que entra por stdin.
 while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOCHIE_HOME/aparte-recibido.txt"; done
 `);
+
   chmodSync(join(bin, "claude"), 0o755);
 
   mkdirSync(join(HOME, "sessions"), { recursive: true, mode: 0o700 });

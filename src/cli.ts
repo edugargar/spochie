@@ -47,6 +47,13 @@ async function ensureDaemon() {
 
 /** Quien soy: la sesion cuyo socket de entrada es el que me han exportado a mi. */
 function whoAmI(): SessionRecord {
+  // Dentro de un Claude aparte la CLI se reconoce por el spochie que atiende: el
+  // registro lo escribio el demonio al lanzarlo, y no lleva socket.
+  if (process.env.SPOCHIE_APARTE) {
+    const ap = liveSessions().find(s => s.aparte === process.env.SPOCHIE_APARTE);
+    if (ap) return ap;
+    throw new Error(`este Claude aparte (spochie ${process.env.SPOCHIE_APARTE}) ya no esta registrado`);
+  }
   const sock = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
   if (!sock) throw new Error("no hay CLAUDE_CODE_MESSAGING_SOCKET: esto tiene que correr dentro de una sesion de Claude Code");
   const me = liveSessions().find(s => s.socket === sock);
@@ -131,6 +138,8 @@ async function main() {
     // unico que hace falta, asi que ni se intenta.
     const raw = process.stdin.isTTY ? "{}" : await new Response(Bun.stdin.stream()).text().catch(() => "{}");
     const ev = raw.trim() ? JSON.parse(raw) : {};
+    // Un Claude aparte ya lo registro el demonio que lo lanzo.
+    if (process.env.SPOCHIE_APARTE) return;
     const socket = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
     const token = process.env.CLAUDE_CODE_MESSAGING_TOKEN;
     if (!socket || !token) { console.error("spochie: esta sesion no tiene buzon; no registro"); return; }
@@ -146,7 +155,6 @@ async function main() {
       // Verificado en 2.1.251. Senal de vida exacta, sin depender del arbol de procesos.
       pid: Number(socket.split("/").pop()!.replace(/\.sock$/, "")) || process.ppid,
       startedAt: Date.now(),
-      ...(process.env.SPOCHIE_APARTE ? { aparte: process.env.SPOCHIE_APARTE } : {}),
     });
     // En macOS el demonio pasa a launchd, que lo mantiene vivo y lo levanta al
     // arrancar. Se hace aqui, en cada arranque de sesion, porque la ruta del plugin

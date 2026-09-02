@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROOT, ensureDirs } from "./paths.ts";
 import * as T from "./threads.ts";
+import { register, type SessionRecord } from "./registry.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const APARTE_DIR = join(ROOT, "aparte");
@@ -54,10 +55,16 @@ export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli()):
   ].join("\n");
 }
 
-export type Aparte = { id: string; child: ChildProcess; cwd: string };
+export type Aparte = { id: string; child: ChildProcess; cwd: string; sess: SessionRecord };
 
-/** Lanza el Claude aparte para un spochie en un directorio. Devuelve el proceso;
- *  quien llama espera a que el hook SessionStart lo registre (con SPOCHIE_APARTE). */
+/** El id de sesion de un aparte. Fijo por spochie: la CLI que corre dentro se
+ *  reconoce por SPOCHIE_APARTE, no por el socket. */
+export const sesionAparte = (id: string) => `aparte-${id}`;
+
+/** Lanza el Claude aparte para un spochie en un directorio y lo registra el demonio
+ *  mismo, sin esperar al hook SessionStart del plugin instalado (que puede ser de una
+ *  version que no sabe de apartes). La entrega va por stdin, asi que el registro no
+ *  necesita socket. */
 export function lanzar(t: T.Thread, cwd: string): Aparte {
   ensureDirs();
   mkdirSync(APARTE_DIR, { recursive: true, mode: 0o700 });
@@ -75,7 +82,12 @@ export function lanzar(t: T.Thread, cwd: string): Aparte {
     stdio: ["pipe", out, out],
   });
   child.on("error", () => {});
-  return { id: t.id, child, cwd };
+  const sess: SessionRecord = {
+    sessionId: sesionAparte(t.id), name: `aparte-${t.id}`, cwd, socket: "(stdin)", token: "",
+    pid: child.pid ?? 0, startedAt: Date.now(), aparte: t.id,
+  };
+  register(sess);
+  return { id: t.id, child, cwd, sess };
 }
 
 /** Un turno por la entrada estandar del aparte, que es el canal que el demonio posee. */
