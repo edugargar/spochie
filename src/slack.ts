@@ -178,6 +178,8 @@ export function noticeBlocks(t: T.Thread, rendered: string): { blocks: Block[]; 
 /** Un acuse a secas: aceptar, vale, ok. No es un turno de conversacion. */
 const ACUSES = /^(acepto|aceptado|vale|ok|okey|oki|dale|si|sí|venga|adelante|perfecto|genial|gracias|👍|✅)[\s.!]*$/i;
 export const esAcuse = (t: string) => ACUSES.test(t.trim());
+/** Por debajo de esto, lo que el receptor escribe estando pendiente es solo "acepto". */
+export const ACEPTAR_A_SECAS = 60;
 
 /** Texto plano de respaldo: es lo que sale en la notificación del móvil. */
 export function fallbackText(t: T.Thread, m: T.Msg): string {
@@ -548,9 +550,11 @@ export class SlackBridge {
       // Yo soy quien recibe y escribo en el hilo estando pendiente: eso ES aceptar.
       // Antes mi propio demonio se saltaba mis mensajes y el tunel no se abria nunca
       // desde Slack, mientras el demonio del otro lado si me reenviaba el "acepto".
+      // Y lo que escribo ahi no es un turno de conversacion salvo que sea largo: en e856
+      // un "aceptarlo" se reenvio a la otra persona como si fuera un mensaje.
       if (esMio && t.to.slackUser === this.me && t.state === "pending") {
         await this.onAccept(t, "en Slack");
-        if (esAcuse(texto)) continue;
+        if (esAcuse(texto) || texto.length < ACEPTAR_A_SECAS) continue;
       }
       // "suelta" / "descarta" del receptor sobre lo que el vigilante retuvo.
       if (esMio && this.onOrden && /^(suelta|libera|entrega|release)[\s.!]*$/i.test(texto)) { await this.onOrden(t, "suelta"); continue; }
