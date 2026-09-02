@@ -1,9 +1,9 @@
 node_modules/
 .DS_Store
 *.log
-# Notas de trabajo y el mensaje de alta con nombres del equipo: se quedan en local.
+# Notas de trabajo locales.
 .claude/
-PARA-ALEX.md
+PARA-*.md
 .playwright-mcp/
 *.png
 !docs/*.png

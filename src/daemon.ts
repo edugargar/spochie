@@ -463,7 +463,7 @@ async function handle(req: Req): Promise<any> {
  *
  * Siempre a UNA, y con la invitacion entera. La version anterior, con varias sesiones
  * y sin rama que encajara, mandaba a todas una linea de "hay varias, haz take" sin el
- * mensaje: en e856 la pregunta del otro lado no llego a ninguna terminal, y el Claude de
+ * mensaje: en la primera prueba real la pregunta no llego a ninguna terminal, y el Claude de
  * la terminal equivocada hizo take por su cuenta. Orden: la rama del sobre existe en
  * el checkout; el asunto o el primer mensaje nombran el directorio; y si no, la
  * sesion donde la persona escribio por ultima vez.

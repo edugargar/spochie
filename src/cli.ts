@@ -313,7 +313,7 @@ async function main() {
     const c = Cfg.load();
     c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
     // El nombre: el que diga --nombre, el que puso quien invita, y si no el usuario del
-    // sistema (que en la primera prueba real salio como "acme" en todo el hilo).
+    // sistema (que en la primera prueba real salio como el usuario de la maquina en todo el hilo).
     if (!c.human || c.human === userInfo().username) c.human = flag(rest, "nombre") ?? datos.n ?? c.human ?? userInfo().username;
     if (datos.i) Cfg.addContact(c, datos.i);
     const { misClaves } = await import("./firma.ts");
