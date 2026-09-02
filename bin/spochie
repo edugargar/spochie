@@ -1,11 +1,12 @@
 #!/bin/sh
 # La CLI de spochie, venga de donde venga:
-#   1. el binario descargado en ~/.claude/spochie/bin/spochie (no necesita Bun)
+#   1. el binario de ESTA version, verificado y bajado por el hook: ~/.claude/spochie/bin/spochie-<version>
 #   2. Bun sobre el codigo fuente de este plugin
 # Los slash commands y los hooks pasan por aqui para no repetir la eleccion.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="${SPOCHIE_HOME:-$HOME/.claude/spochie}/bin/spochie"
+VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/plugin.json" | head -1)
+BIN="${SPOCHIE_HOME:-$HOME/.claude/spochie}/bin/spochie-$VERSION"
 if [ -x "$BIN" ]; then exec "$BIN" "$@"; fi
 if command -v bun >/dev/null 2>&1; then exec bun run "$ROOT/src/cli.ts" "$@"; fi
-echo "spochie: neither the downloaded binary ($BIN) nor Bun is available." >&2
+echo "spochie: neither the verified binary ($BIN) nor Bun is available. Restart Claude Code so the hook can download it, or install Bun." >&2
 exit 127
