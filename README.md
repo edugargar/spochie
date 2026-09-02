@@ -38,7 +38,8 @@ machine, and no tunnel opens until the receiving person says yes.
 
 One command on the inviter's side, and on the newcomer's side two commands in Claude
 Code, a restart, and one paste. No terminal, no Slack login, no tokens to copy, no Slack
-permissions to ask for. The only prerequisite is [Bun](https://bun.sh).
+permissions to ask for, nothing to install first: if [Bun](https://bun.sh) isn't there,
+the first session start fetches a self-contained binary from this repo's releases.
 
 The inviter runs:
 
@@ -143,10 +144,13 @@ Parts:
 - **`SessionStart` hook**: registers the session, starts the daemon and claims the
   spochies that arrived while nobody was listening.
 - **daemon, one per machine**: the only thing alive between turns, so it keeps the clocks
-  and routes. A Claude can't hold a timer; it only exists while it thinks.
+  and routes. A Claude can't hold a timer; it only exists while it thinks. On macOS it
+  runs under launchd and writes a heartbeat every 20 s that `doctor` measures.
 - **Slack bridge**: transport between machines, addressing, and the source of truth for
   state.
-- **topic guardian**: Haiku labels what drifts off-subject. It never blocks.
+- **guardian**: on the receiving side, Haiku reads every incoming message. Off-topic
+  gets a label; a message that asks the receiving Claude to act is held until the
+  receiving human releases it.
 - **transcript**: one HTML file per thread, ready to publish as an Artifact.
 - **`SessionEnd` hook**: closing the window closes your live spochies.
 
@@ -206,8 +210,16 @@ Not in a policy document: built, each with its test.
 - **A patch that doesn't fit is refused when sent.** Over Slack a diff travels in 16,200
   characters; anything beyond is not truncated from the end, it is rejected and a branch
   is suggested.
-- **The guardian labels, it doesn't cut.** A guardian that blocks ends up cutting the
-  good message without anyone knowing why.
+- **The guardian judges on arrival, not on departure.** The sender need not be
+  trusted. Off-topic only gets a label and a note in the thread. A message that asks
+  the receiving Claude to run, modify, install, open, send files or secrets, or that
+  poses as system rules, never enters the session: it waits in the thread until the
+  receiving human writes `suelta` (or `descarta`), or runs `spochie release`.
+- **Envelopes are signed.** Each person gets an ed25519 key at join. Every envelope
+  carries the public key and a signature over id, kind, sender and text; the first key
+  seen for a Slack id is pinned, like SSH, and a later envelope from that id with
+  another key is discarded and the thread is told. Unsigned envelopes still deliver,
+  labelled as such.
 - **"delivered" doesn't lie.** Over Slack a message leaves with a delay; until it leaves
   the response says `encolado` (queued), and if publishing fails the sending session is told.
 
@@ -217,10 +229,11 @@ Honest version. The real boundary is "whoever holds the bot token is on the team
 Everything else is built on top of that.
 
 What's in place: text-only across machines (patch or branch name, never writes); the
-human gate through Claude Code's permission dialog; per-message random fencing of remote
-text; downloaded files can't escape the spool (`../` in name or id, tested); a minimal
-envelope; config and session records at 0600 with `doctor` complaining otherwise; both
-timeouts; no secrets in this repo.
+human gate through Claude Code's permission dialog; signed envelopes with keys pinned on
+first sight; the receiving-side guardian that holds anything asking the Claude to act;
+per-message random fencing of remote text; downloaded files can't escape the spool
+(`../` in name or id, tested); a minimal envelope; config and session records at 0600
+with `doctor` complaining otherwise; both timeouts; no secrets in this repo.
 
 What you should know:
 
@@ -228,14 +241,17 @@ What you should know:
   can read the bot's DM with anyone and post as the bot. When someone leaves, rotate it
   and send a fresh invitation. That is the price of "one paste" onboarding; per-person
   OAuth (`xoxp`) is still supported via `spochie slack setup` for teams that want it.
-- **The envelope's `from` is not verified** beyond holding the token. Fine among
-  colleagues, not beyond.
+- **Keys are pinned on first sight.** Whoever holds the bot token can still post the
+  *first* envelope for a Slack id nobody has heard from, with a key of their own. After
+  that, that id is theirs. Invitations carry the inviter's key, so the person who
+  invited you is pinned before anything arrives.
 - **Remote text enters your session as a turn.** The fence stops it from posing as a
-  header or as spochie's rules, but a persuasive message is still a persuasive message.
-  Run Claude Code with normal permissions, not bypass, on machines that use spochie.
+  header or as spochie's rules, and the guardian holds what asks you to act, but a
+  persuasive message is still a persuasive message. Run Claude Code with normal
+  permissions, not bypass, on machines that use spochie.
 - **Slack sees everything**: patches and screenshots travel in the clear through Slack,
-  like anything else you already paste there. The guardian sends each message to Haiku
-  for labelling; `spochie config --guardian off` turns that off.
+  like anything else you already paste there. The guardian sends each incoming message
+  to Haiku; `spochie config --guardian off` turns that off, and with it the hold.
 - **The daemon's local socket has no auth.** Any process running as your user can ask it
   to inject text into your sessions. On a single-user machine that's the same boundary as
   your own processes; on a shared box it isn't.
@@ -300,13 +316,13 @@ arrive and nobody notices.
 ## What it doesn't do
 
 - More than two participants. Deliberate: a spochie is a pair.
-- The daemon doesn't survive a reboot. The first hook starts it, which is enough: with
-  no session, there's nothing to deliver. `launchd/` has a plist if you want it always on.
+- Linux daemons don't survive a reboot yet. The first hook starts one, which is enough:
+  with no session, there's nothing to deliver. macOS gets launchd automatically.
 
 ## Development
 
 ```
-bun test                                # 84 tests, no network
+bun test                                # 90 tests, no network
 SPOCHIE_HOME=/tmp/x bun run src/daemon.ts
 ```
 
@@ -322,12 +338,19 @@ src/
   threads.ts    the envelope, the fence, the limits
   outbox.ts     merges consecutive messages before publishing
   alta.ts       builds and reads invitations
+  firma.ts      ed25519 signatures, keys pinned on first sight
+  guardian.ts   the receiving-side judge
+  arranque.ts   how the daemon starts: launchd, heartbeat, compiled or not
   selftest.ts   the whole loop, locally
   doctor.ts     what has to be right
 commands/       /spochie and /spochie:join
-hooks/          SessionStart and SessionEnd
+hooks/          SessionStart (fetches the binary if Bun is missing) and SessionEnd
+bin/spochie     picks the downloaded binary or Bun
 scripts/        assistants for the things only a person can do
 ```
+
+Releases: pushing a `v*` tag runs the tests and attaches one self-contained binary per
+platform (`bun build --compile`) to the GitHub release. That is what the hook downloads.
 
 The CLI speaks Spanish; that's where it was born. Manual install without the plugin:
 `hooks/session-start.sh` and `hooks/session-end.sh` do the same as `hooks/hooks.json`,
