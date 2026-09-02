@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 /** Lo que viaja en la invitacion. `u` es para quien va (asi el alta no tiene que
  *  buscarse a si mismo en Slack, que exige un scope que la app puede no tener) e `i`
  *  es quien invita, para que "@edu" resuelva en local sin llamar a Slack. */
-export type Invitacion = { b: string; t?: string; u?: string; i?: { id: string; name: string } };
+export type Invitacion = { b: string; t?: string; u?: string; i?: { id: string; name: string; pk?: string } };
 
 export function crearInvitacion(inv: Invitacion): string {
   return Buffer.from(JSON.stringify(inv)).toString("base64url");
@@ -31,7 +31,10 @@ export function leerInvitacion(blob: string): Invitacion | null {
     const inv: Invitacion = { b: j.b };
     if (typeof j.t === "string") inv.t = j.t;
     if (typeof j.u === "string" && /^[UW][A-Z0-9]{6,}$/.test(j.u)) inv.u = j.u;
-    if (j.i && typeof j.i.id === "string" && typeof j.i.name === "string") inv.i = { id: j.i.id, name: j.i.name };
+    if (j.i && typeof j.i.id === "string" && typeof j.i.name === "string") {
+      inv.i = { id: j.i.id, name: j.i.name };
+      if (typeof j.i.pk === "string") inv.i.pk = j.i.pk;
+    }
     return inv;
   } catch { return null; }
 }

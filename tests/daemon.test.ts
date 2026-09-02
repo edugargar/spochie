@@ -46,6 +46,13 @@ function rpc(req: any): Promise<any> {
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+/** El buzon falso recibe por su propio socket, en este mismo proceso: el rpc puede
+ *  volver antes de que el evento 'data' se haya procesado. Con la suite entera en
+ *  paralelo esa carrera se veia. Se espera a que llegue, con tope. */
+async function llega(box: { got: string[] }, pred: (s: string) => boolean, ms = 3000) {
+  for (let i = 0; i < ms / 25; i++) { if (box.got.some(pred)) return true; await sleep(25); }
+  return box.got.some(pred);
+}
 const A = fakeInbox("a"), B = fakeInbox("b");
 let daemon: ChildProcess;
 
@@ -72,7 +79,7 @@ test("ciclo completo: abrir, puerta de aprobacion, hablar y cerrar", async () =>
   expect(open.ok).toBe(true);
   expect(open.delivered).toBe(true);
   const id = open.id;
-  expect(B.got.at(-1)).toContain(`spochie accept ${id}`);
+  expect(await llega(B, x => x.includes(`spochie accept ${id}`))).toBe(true);
   expect((await rpc({ op: "list" })).threads[0].state).toBe("pending");
 
   // 2. La puerta: B no puede contestar sin que su humano acepte.
@@ -84,20 +91,20 @@ test("ciclo completo: abrir, puerta de aprobacion, hablar y cerrar", async () =>
   // 3. Aceptar: solo el lado que recibe puede hacerlo.
   expect((await rpc({ op: "accept", sessionId: "A", id })).ok).toBe(false);
   expect((await rpc({ op: "accept", sessionId: "B", id })).ok).toBe(true);
-  expect(A.got.at(-1)).toContain("ha aceptado el tunel");
+  expect(await llega(A, x => x.includes("ha aceptado el tunel"))).toBe(true);
 
   // 4. Hablar en las dos direcciones.
   expect((await rpc({ op: "say", sessionId: "B", id, text: "el wrapper lleva 360" })).delivered).toBe(true);
-  expect(A.got.at(-1)).toContain("el wrapper lleva 360");
+  expect(await llega(A, x => x.includes("el wrapper lleva 360"))).toBe(true);
   expect((await rpc({ op: "say", sessionId: "A", id, text: "gracias, era eso" })).delivered).toBe(true);
-  expect(B.got.at(-1)).toContain("gracias, era eso");
+  expect(await llega(B, x => x.includes("gracias, era eso"))).toBe(true);
 
   // 5. Un tercero no entra.
   expect((await rpc({ op: "say", sessionId: "C", id, text: "hola" })).ok).toBe(false);
 
   // 6. Cerrar: se avisa al otro lado y deja de entregar.
   expect((await rpc({ op: "close", sessionId: "A", id, reason: "resuelto" })).ok).toBe(true);
-  expect(B.got.at(-1)).toContain("cerrado (resuelto)");
+  expect(await llega(B, x => x.includes("cerrado (resuelto)"))).toBe(true);
   expect((await rpc({ op: "say", sessionId: "A", id, text: "una mas" })).ok).toBe(false);
 }, 30_000);
 
@@ -137,7 +144,7 @@ test("varios mensajes seguidos del mismo lado salen como uno", async () => {
   await rpc({ op: "say", sessionId: "A", id: open.id, text: "[1] primera parte" });
   await rpc({ op: "say", sessionId: "A", id: open.id, text: "[2] segunda parte" });
   expect(B.got.length).toBe(antes + 2);
-  expect(B.got.at(-1)).toContain("segunda parte");
+  expect(await llega(B, x => x.includes("segunda parte"))).toBe(true);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
 }, 20_000);
 
@@ -151,7 +158,7 @@ test("un envio local dice entregado solo si el buzon lo acepto", async () => {
   await rpc({ op: "accept", sessionId: "B", id: open.id });
   const r = await rpc({ op: "say", sessionId: "A", id: open.id, text: "esto tiene que llegar de verdad" });
   expect(r.delivered).toBe(true);
-  expect(B.got.some(x => x.includes("esto tiene que llegar de verdad"))).toBe(true);
+  expect(await llega(B, x => x.includes("esto tiene que llegar de verdad"))).toBe(true);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
 }, 20_000);
 

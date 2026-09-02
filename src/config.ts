@@ -11,7 +11,9 @@ export type Config = {
   transcript: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
-  contacts?: Record<string, { id: string; name: string }>;
+  contacts?: Record<string, { id: string; name: string; pk?: string }>;
+  /** Clave ed25519 con la que se firman los sobres. Nace en el alta. */
+  keys?: { pub: string; priv: string };
   slack?: {
     /** Token de usuario (xoxp-) de tu app de Slack, obtenido por OAuth. Tuyo, no compartido.
      *  Vacio si usas tokenFile. Ya no hace falta para nada: con el de bot basta. */
@@ -67,13 +69,22 @@ export function slackBotToken(c: Config): string | null {
 
 /** Guarda un contacto por su nombre en minusculas y sin espacios, que es como se
  *  escribe despues de la arroba. */
-export function addContact(c: Config, p: { id: string; name: string }) {
-  c.contacts = { ...(c.contacts ?? {}), [claveContacto(p.name)]: p };
+export function addContact(c: Config, p: { id: string; name: string; pk?: string }) {
+  // Si ya estaba por otro nombre (o con clave), se conserva lo que ya se sabia.
+  const previo = contactById(c, p.id);
+  if (previo) {
+    for (const [k, v] of Object.entries(c.contacts ?? {})) if (v.id === p.id) delete c.contacts![k];
+  }
+  c.contacts = { ...(c.contacts ?? {}), [claveContacto(p.name)]: { ...previo, ...p, pk: p.pk ?? previo?.pk } };
+}
+
+export function contactById(c: Config, id: string): { id: string; name: string; pk?: string } | null {
+  return Object.values(c.contacts ?? {}).find(x => x.id === id) ?? null;
 }
 
 export const claveContacto = (n: string) => n.toLowerCase().replace(/\s+/g, "");
 
-export function contact(c: Config, needle: string): { id: string; name: string } | null {
+export function contact(c: Config, needle: string): { id: string; name: string; pk?: string } | null {
   return c.contacts?.[claveContacto(needle)] ?? null;
 }
 

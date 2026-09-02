@@ -94,6 +94,7 @@ const USAGE = `spochie - tunel entre sesiones de Claude Code de personas distint
   spochie say <id> --file <ruta|->      para textos largos, sin pelearte con las comillas
   spochie patch <id> [--diff-file f | --from-git]
   spochie branch <id> <nombre-de-rama>
+  spochie release <id> | discard <id>   LO EJECUTA EL HUMANO RECEPTOR: suelta o tira lo que retuvo el vigilante
   spochie close <id> [--reason "..."]
   spochie list | show <id>
   spochie search "<texto>"              busca entre los spochies de esta maquina
@@ -185,7 +186,8 @@ async function main() {
     const { crearInvitacion, textoInvitacion } = await import("./alta.ts");
     const quien = await whoIs(bot);
     if (!quien) { console.error("el token de bot que tienes no vale (auth.test)"); process.exit(1); return; }
-    const yo = { id: c.slack.userId, name: c.human ?? userInfo().username };
+    const { misClaves } = await import("./firma.ts");
+    const yo = { id: c.slack.userId, name: c.human ?? userInfo().username, pk: misClaves(c).pub };
     const api = (m: string, body: unknown) => fetch(`https://slack.com/api/${m}`, {
       method: "POST", headers: { authorization: `Bearer ${bot}`, "content-type": "application/json" }, body: JSON.stringify(body),
     }).then(r => r.json());
@@ -279,6 +281,8 @@ async function main() {
     c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
     if (!c.human) c.human = flag(rest, "nombre") ?? userInfo().username;
     if (datos.i) Cfg.addContact(c, datos.i);
+    const { misClaves } = await import("./firma.ts");
+    misClaves(c);
     Cfg.save(c);
     if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.claveContacto(datos.i.name)}.`);
     console.log(`Listo. Estas dentro de ${bot!.team} como ${userId}${email ? ` (${email})` : ""}, y el bot es ${bot!.user}.`);
@@ -402,6 +406,10 @@ async function main() {
     }
     case "branch":
       out(await rpc({ op: "say", sessionId: whoAmI().sessionId, id: rest[0], text: rest[1], kind: "branch" }));
+      break;
+    case "release":
+    case "discard":
+      out(await rpc({ op: cmd, sessionId: whoAmI().sessionId, id: rest[0] }));
       break;
     case "close":
       out(await rpc({ op: "close", sessionId: whoAmI().sessionId, id: rest[0], reason: flag(rest, "reason") }));

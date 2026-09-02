@@ -19,6 +19,7 @@
  * para buscar personas, que es lo unico que el bot no puede hacer.
  */
 import * as Cfg from "./config.ts";
+import { misClaves, firmar, verificarSobre, type Veredicto } from "./firma.ts";
 import * as T from "./threads.ts";
 import { subir, bajar } from "./files.ts";
 
@@ -42,6 +43,9 @@ export type Envelope = {
   fromName?: string;
   kindOfMsg?: T.MsgKind;
   context?: unknown;
+  /** Clave publica de quien firma y firma de (id, kind, from, texto). Ver firma.ts. */
+  pk?: string;
+  sig?: string;
 };
 
 /** Slack corta cada bloque a 3000 caracteres. Trocear por lineas en vez de rebanar,
@@ -192,6 +196,11 @@ export async function whoIs(token: string): Promise<{ userId: string; user: stri
   } catch { return null; }
 }
 
+type OnMessage = (t: T.Thread, m: T.Msg) => Promise<void>;
+type OnAccept = (t: T.Thread, como: string) => Promise<void>;
+type OnRemoteAccept = (t: T.Thread, como: string) => Promise<void>;
+type OnOrden = (t: T.Thread, orden: "suelta" | "descarta") => Promise<void>;
+
 export class SlackBridge {
 
   private lastDiscovery = 0;
@@ -219,9 +228,10 @@ export class SlackBridge {
     private onMessage: OnMessage,
     private onAccept: OnAccept,
     private onRemoteAccept: OnRemoteAccept,
+    private onOrden?: OnOrden,
   ) {}
 
-  static fromConfig(onMessage: OnMessage, onAccept: OnAccept, onRemoteAccept: OnRemoteAccept): SlackBridge | null {
+  static fromConfig(onMessage: OnMessage, onAccept: OnAccept, onRemoteAccept: OnRemoteAccept, onOrden?: OnOrden): SlackBridge | null {
     const c = Cfg.load();
     const user = Cfg.slackToken(c);
     const bot = Cfg.slackBotToken(c);
@@ -229,7 +239,7 @@ export class SlackBridge {
     // bot busca personas igual de bien. Lo que no se puede pedir a nadie es un token
     // que solo se consigue instalando la app uno mismo.
     if (!bot || !c.slack?.userId) return null;
-    return new SlackBridge(user ?? "", bot, c.slack.userId, onMessage, onAccept, onRemoteAccept);
+    return new SlackBridge(user ?? "", bot, c.slack.userId, onMessage, onAccept, onRemoteAccept, onOrden);
   }
 
   /** Un 429 no se reintenta al momento: se respeta Retry-After y se para todo.
@@ -320,6 +330,7 @@ export class SlackBridge {
       v: 1, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
       subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
     };
+    this.firma(env, t.messages[0]?.text ?? "");
     const post = await this.call("chat.postMessage", {
       channel,
       text: `Spochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
@@ -345,6 +356,7 @@ export class SlackBridge {
       from: mine.slackUser ?? this.me,
       ...(m ? { kindOfMsg: m.kind } : {}),
     };
+    if (m) this.firma(env, m.text);
     const body = m
       ? { text: fallbackText(t, m), blocks: messageBlocks(t, m) }
       : noticeBlocks(t, notice);
@@ -511,12 +523,20 @@ export class SlackBridge {
         if (env.from === this.me) continue;
         if (env.kind === "accept") { await this.onRemoteAccept(t, "en la otra maquina"); continue; }
         if (env.kind === "notice" || env.kind === "invite") continue;
+        const texto = bodyFromBlocks((rep as any).blocks) || rep.text || "";
+        const firma = verificarSobre(env, texto);
+        if (firma === "mala") {
+          // No se entrega. Se dice en el hilo, que es donde lo ven las personas.
+          await this.aviso(t, `:no_entry: un mensaje que decia venir de ${env.fromName ?? env.from} llevaba una firma que no es suya. Descartado.`);
+          continue;
+        }
         await this.onMessage(t, {
           at: Math.round(Number(rep.ts) * 1000),
           from: T.otherSide(t, this.localSideId(t)).sessionId,
           author: "claude",
           kind: env.kindOfMsg ?? "text",
-          text: bodyFromBlocks((rep as any).blocks) || rep.text || "",
+          text: texto,
+          firma,
         });
         continue;
       }
@@ -532,6 +552,9 @@ export class SlackBridge {
         await this.onAccept(t, "en Slack");
         if (esAcuse(texto)) continue;
       }
+      // "suelta" / "descarta" del receptor sobre lo que el vigilante retuvo.
+      if (esMio && this.onOrden && /^(suelta|libera|entrega|release)[\s.!]*$/i.test(texto)) { await this.onOrden(t, "suelta"); continue; }
+      if (esMio && this.onOrden && /^(descarta|tira|discard)[\s.!]*$/i.test(texto)) { await this.onOrden(t, "descarta"); continue; }
       // Mis propios mensajes no vuelven a mi propia sesion.
       if (esMio) continue;
       // Un "acepto" a secas no es un turno: reenviarlo solo consigue que el Claude
@@ -546,6 +569,30 @@ export class SlackBridge {
         author: "human", kind: "text", text: texto,
       });
     }
+  }
+
+  /** Un aviso de spochie en el hilo, con sobre para que ningun demonio lo tome por una persona. */
+  async aviso(t: T.Thread, texto: string) {
+    if (!t.slack) return;
+    await this.avisoEn(t.slack.channel, t.slack.ts, texto);
+  }
+  private async avisoEn(channel: string, thread_ts: string, texto: string) {
+    try {
+      await this.call("chat.postMessage", {
+        channel, thread_ts, text: texto, blocks: [ctx(texto)],
+        metadata: { event_type: EVENT, event_payload: { v: 1, id: "aviso", kind: "notice", from: this.me } },
+      });
+    } catch {}
+  }
+
+  /** Firma el sobre con mis claves. Si no hay claves (config de antes del alta con
+   *  firma), el sobre sale sin firmar y el otro lado lo vera marcado. */
+  private firma(env: Envelope, text: string) {
+    const c = Cfg.load();
+    if (!c.slack) return;
+    const k = misClaves(c);
+    env.pk = k.pub;
+    env.sig = firmar(k.priv, env.id, env.kind, env.from, text);
   }
 
   /** Cual de los dos lados soy yo en este hilo. */
@@ -568,6 +615,11 @@ export class SlackBridge {
       if (msg.ts > this.inboxCursor) this.inboxCursor = msg.ts;
       const env = envelopeOf(msg);
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
+      if (verificarSobre(env, bodyFromBlocks(msg.blocks)) === "mala") {
+        known.add(env.id);
+        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:no_entry: esta invitacion dice venir de ${env.fromName ?? env.from} pero la firma no es suya. Descartada.`);
+        continue;
+      }
       // Un spochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
       if (T.yaVisto(env.id)) continue;
       await this.materialize(env, ch, msg.thread_ts ?? msg.ts, bodyFromBlocks(msg.blocks));
