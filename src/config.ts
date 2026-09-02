@@ -78,7 +78,12 @@ export function addContact(c: Config, p: { id: string; name: string; pk?: string
   if (previo) {
     for (const [k, v] of Object.entries(c.contacts ?? {})) if (v.id === p.id) delete c.contacts![k];
   }
-  c.contacts = { ...(c.contacts ?? {}), [claveContacto(p.name)]: { ...previo, ...p, pk: p.pk ?? previo?.pk } };
+  // El nombre lo pone el emisor del sobre y no va firmado: un id nuevo que se llame
+  // "Edu" no puede quedarse con la entrada del Edu de verdad. Va con sufijo.
+  let clave = claveContacto(p.name);
+  const ocupada = c.contacts?.[clave];
+  if (ocupada && ocupada.id !== p.id) clave = `${clave}-${p.id.slice(-4).toLowerCase()}`;
+  c.contacts = { ...(c.contacts ?? {}), [clave]: { ...previo, ...p, pk: p.pk ?? previo?.pk } };
 }
 
 export function contactById(c: Config, id: string): { id: string; name: string; pk?: string } | null {
