@@ -207,8 +207,13 @@ subject, the question, and three buttons. "Que pase" (let them in) accepts; "Aho
 (not now) closes the tunnel as rejected; "Ver en Slack" opens the thread, where replying
 also accepts. Your open sessions see nothing at all, before or after.
 
-Once you accept, the daemon opens a **new terminal window** in the right repo running a
-Claude of its own, hands it the thread, and every later turn goes there. You watch it
+Once you accept, the daemon opens a **new terminal window** running a Claude of its own
+on a **clean copy of the repo** (a `git worktree` of HEAD, shared objects, seconds to
+make), hands it the thread, and every later turn goes there. Your checkout is never the
+working directory of that Claude, so even something that slipped past its tool list
+could not touch your files. The price: what isn't committed (`.env`, local edits) isn't
+in the copy, and the side Claude says so when asked. `spoochie config --copia off`
+makes it work in the real checkout instead. You watch it
 work in that window and can type to it. It can read the repo and run read-only git; it
 cannot write files, cannot accept or release anything. Closing the window closes the
 spoochie.
@@ -333,8 +338,13 @@ What you should know:
   commands that change history are denied. `allowedTools` cannot filter arguments, so
   `git diff --output=<file>` would write a file, and in `auto` mode a Bash command
   outside the allowlist is decided by Claude Code's classifier, not by a person.
-- **The guardian fails open.** If Haiku is unreachable or times out (20 s), the message
-  is delivered unlabelled rather than lost. A held message needs a working guardian.
+- **The guardian fails open, visibly.** If Haiku is unreachable or times out (20 s), the
+  message is delivered labelled `sin vigilar` in the session and in the thread, rather
+  than lost or silently trusted. A held message needs a working guardian.
+- **Every envelope carries the sender's version.** When the other side is on an older
+  line, the newer daemon says so once in the thread, with the update command. Both
+  machines on the same minor version are guaranteed to understand each other; across
+  minors, the newer side keeps reading the older format.
 - **Slack sees everything**: patches and screenshots travel in the clear through Slack,
   like anything else you already paste there. The guardian sends each incoming message
   to Haiku; `spoochie config --guardian off` turns that off, and with it the hold.
@@ -459,8 +469,14 @@ bin/spoochie     runs the verified binary of this version, or Bun over the sourc
 scripts/        assistants for the things only a person can do
 ```
 
-Releases: pushing a `v*` tag runs the tests and attaches one self-contained binary per
-platform (`bun build --compile`) to the GitHub release. That is what the hook downloads.
+Releases: `bun scripts/version.ts X.Y.Z "what changed"` sets the version in the three
+manifests and opens the `CHANGELOG.md` entry (a test fails if they disagree); pushing the
+`vX.Y.Z` tag runs the tests and attaches one self-contained binary per platform
+(`bun build --compile`) plus `SHA256SUMS` to the GitHub release. That is what the hook
+downloads. Every push to `main` runs the suite on Linux and macOS. The daemon checks the
+latest release every 6 hours and mentions a newer one once in the thread; `spoochie
+doctor` shows it too. Outgoing messages are queued on disk (`~/.claude/spoochie/outbox.json`),
+so a daemon restart mid-conversation loses nothing, and failed publishes retry every minute.
 
 The CLI speaks Spanish; that's where it was born. Manual install without the plugin:
 `hooks/session-start.sh` and `hooks/session-end.sh` do the same as `hooks/hooks.json`,

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 (2026-09-04)
+
+- Outgoing messages are queued on disk and resumed after a daemon restart; failed publishes retry every minute. Side windows are re-attached after a restart.
+- The Claude on the side works on a clean `git worktree` copy of the repo, never on your checkout (`spoochie config --copia off` to change that).
+- Every envelope carries the sender's version; the newer side says once in the thread when the other is behind. `spoochie --version`.
+- A message the guardian could not judge is delivered labelled `sin vigilar`, in the session and in the thread.
+- The daemon checks the latest release every 6 hours and mentions a newer one; `doctor` shows version, side-Claude mode and the outbox.
+- Our own mascot (docs/spoochie.svg) instead of Poochie's picture.
+- `CHANGELOG.md`, one version source (`bun scripts/version.ts`), tests on every push on Linux and macOS, and the Slack app as a manifest (`docs/slack-app-manifest.yml`).
+
 ## 0.7.1 (2026-09-04)
 
 - The thread of a spoochie you open lives in a group DM (bot + both people). `--hilos canal|dm` for the alternatives. Needs `mpim:*` scopes; falls back to the receiver's DM without them.
