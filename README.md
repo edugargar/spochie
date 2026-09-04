@@ -108,17 +108,16 @@ sequenceDiagram
     participant DA as daemon (Alice's machine)
     participant S as Slack (DM with the bot)
     participant DB as daemon (Bob's machine)
-    participant CB as Bob's Claude
+    participant CB as Bob's Claude on the side
     participant B as Bob
 
     CA->>DA: spoochie open @bob --subject "the modal breaks"
     DA->>S: posts the invitation in the DM
     S-->>B: notification
     DB->>S: discovers the invitation
-    DB->>CB: injects the envelope into the session
-    CB->>B: "Alice wants to open a spoochie. Accept?"
-    B->>S: replies in the thread (that is accepting)
-    DB->>CB: tunnel open
+    DB->>B: macOS dialog: "Alice wants to open a spoochie" [Que pase]
+    B->>DB: clicks Que pase (or replies in the Slack thread)
+    DB->>CB: opens a new Terminal window with a read-only Claude, hands it the thread
     CB->>CB: reads its local files
     CB->>DB: spoochie say "it's the container's min-width"
     DB->>S: reply in the thread
@@ -202,19 +201,26 @@ Parts:
 ## The Claude on the side
 
 A spoochie that lands in the session you are working in smears someone else's
-conversation over your screen. So by default it doesn't. The session you last typed in
-gets the invitation, once, with the actual question in it. That is the only thing an
-interactive session ever sees. Once you accept (in Slack or with `spoochie accept`), the
-daemon opens a **new terminal window** in that repo running a Claude of its own, hands
-it the thread, and every later turn goes there. You watch it work in that window and can
-type to it. It can read the repo and run read-only git; it cannot write files, cannot
-accept or release anything. Closing the window closes the spoochie.
+conversation over your screen. So it never does. On macOS an incoming spoochie is a
+**system dialog**, outside every terminal, with Poochie on it: who is asking, the
+subject, the question, and three buttons. "Que pase" (let them in) accepts; "Ahora no"
+(not now) closes the tunnel as rejected; "Ver en Slack" opens the thread, where replying
+also accepts. Your open sessions see nothing at all, before or after.
 
-Which session gets the invitation, in order: the one whose checkout has the branch in
-the envelope; the one whose directory name appears in the subject or the first message;
-otherwise the one you typed in most recently. If it picked wrong, `spoochie take <id>`
-from the right session moves it. Accepting twice, or taking it from the same repo, never
-opens a second window.
+Once you accept, the daemon opens a **new terminal window** in the right repo running a
+Claude of its own, hands it the thread, and every later turn goes there. You watch it
+work in that window and can type to it. It can read the repo and run read-only git; it
+cannot write files, cannot accept or release anything. Closing the window closes the
+spoochie.
+
+Which repo, in order: the open session whose checkout has the branch in the envelope;
+the one whose directory name appears in the subject or the first message; otherwise the
+one you typed in most recently. That session only lends its directory. If it picked
+wrong, `spoochie take <id>` from the right session moves it. Accepting twice, or taking
+it from the same repo, never opens a second window.
+
+Without a desktop (Linux servers, `SPOOCHIE_AVISO=terminal`) the invitation is delivered
+into that session as a turn instead, and its Claude asks you.
 
 - The window runs in Claude Code's `auto` permission mode: the read-only allowlist is
   approved outright, anything else is judged by Claude Code's own classifier instead of

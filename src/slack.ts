@@ -305,6 +305,14 @@ export class SlackBridge {
     return json;
   }
 
+  private team: string | null = null;
+  /** El id del workspace, para los enlaces slack:// del dialogo de aviso. */
+  async teamId(): Promise<string | null> {
+    if (this.team) return this.team;
+    try { this.team = (await this.get("auth.test", {})).team_id ?? null; } catch { this.team = null; }
+    return this.team;
+  }
+
   /** El DM entre el bot y yo: el unico canal que hay que mirar para lo que me llega. */
   private async inbox(): Promise<string | null> {
     if (this.myDm) return this.myDm;

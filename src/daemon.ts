@@ -15,6 +15,7 @@ import * as T from "./threads.ts";
 import { encolar } from "./outbox.ts";
 import { latir, LATIDO_MS } from "./arranque.ts";
 import * as Ap from "./aparte.ts";
+import * as Dlg from "./dialogo.ts";
 import * as Cfg from "./config.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
@@ -493,7 +494,13 @@ function elegir(t: T.Thread): { pick: SessionRecord | null; otras: number } {
   return { pick: vivas[0], otras };
 }
 
-/** Entrega la invitacion a la sesion que le toca. */
+/** Los dialogos de aviso abiertos, por spoochie: uno por spoochie, y se cierran solos
+ *  si el tunel se acepta desde Slack o se cierra. */
+const dialogos = new Map<string, import("node:child_process").ChildProcess>();
+
+/** Asigna el spoochie a la sesion que le toca y avisa a la persona. En macOS el aviso
+ *  es un dialogo del sistema y la sesion no ve nada: solo presta su directorio para el
+ *  Claude aparte. Sin escritorio, la invitacion entra en esa sesion como antes. */
 async function assign(t: T.Thread): Promise<string | null> {
   if (t.state !== "pending" || !t.to.sessionId.startsWith("slack:")) return null;
   // Quien abrio el tunel no es el destinatario: si se lo repartiera a si mismo,
@@ -504,10 +511,35 @@ async function assign(t: T.Thread): Promise<string | null> {
   if (!pick) return null;
   t.to = { ...t.to, sessionId: pick.sessionId, name: pick.name, cwd: pick.cwd, human: Cfg.load().human ?? t.to.human };
   T.save(t);
+  if (Dlg.modoAviso() === "dialogo") {
+    if (!dialogos.has(t.id)) avisarConDialogo(t, pick);
+    log("assign", t.id, "-> dialogo, repo de", pick.name);
+    return pick.sessionId;
+  }
   const extra = otras ? `\nSi esto es para otra sesion tuya (hay ${otras} mas abiertas), tu humano lo dice y desde alli:  spoochie take ${t.id}` : "";
   await send(pick, T.renderInvite(t, pick.sessionId) + extra);
   log("assign", t.id, "->", pick.name, otras ? `(${otras} sesiones mas)` : "");
   return pick.sessionId;
+}
+
+function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
+  const { child, respuesta } = Dlg.preguntar(t);
+  dialogos.set(t.id, child);
+  void respuesta.then(async r => {
+    if (dialogos.get(t.id) === child) dialogos.delete(t.id);
+    const fresco = T.load(t.id);
+    log("aviso", t.id, "dialogo:", r ?? "sin respuesta");
+    // Mientras el dialogo estaba abierto pudo aceptarse en Slack o caducar: manda el estado.
+    if (!fresco || fresco.state !== "pending") return;
+    if (r === "acepto") await onSlackAccept(fresco, "en el aviso");
+    else if (r === "rechazo") await closeThread(fresco, `rechazado por ${Cfg.load().human ?? "la persona"}`, pick.sessionId);
+    else if (r === "slack" && fresco.slack) Dlg.abrirEnSlack(slack ? await slack.teamId() : null, fresco.slack.channel, fresco.slack.ts);
+  });
+}
+
+function cerrarDialogo(id: string) {
+  const d = dialogos.get(id);
+  if (d) { dialogos.delete(id); try { d.kill(); } catch {} }
 }
 
 /** Aceptar escribiendo en el hilo de Slack. Hace lo mismo que `spoochie accept`. */
@@ -523,13 +555,15 @@ async function onSlackAccept(t: T.Thread, quien: string) {
   fresco.acceptedBy = Cfg.load().human ?? quien;
   fresco.lastActivityAt = fresco.acceptedAt;
   T.save(fresco);
+  cerrarDialogo(fresco.id);
   await sendToSide(fresco, fresco.from, T.renderAccepted(fresco, fresco.from.sessionId));
   const local = sessById(fresco.to.sessionId);
   if (local && !local.aparte) {
     if (Cfg.load().aparte !== false && !fresco.from.sessionId.startsWith(local.sessionId)) {
-      // Una linea, y es la ultima que ve esa sesion: sin ella su Claude se queda con la
-      // pregunta de "¿lo aceptas?" en el aire y acaba haciendo accept o take por su cuenta.
-      await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
+      // Con el aviso en dialogo, la sesion nunca supo del spoochie y no hay nada que
+      // decirle. Con la invitacion en la terminal si: una linea, y es la ultima que ve;
+      // sin ella su Claude se queda con "¿lo aceptas?" en el aire y hace accept o take.
+      if (Dlg.modoAviso() !== "dialogo") await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
       void atender(fresco, local.cwd).then(s => avisarDondeSeAtiende(fresco, s, local.cwd));
     } else {
       await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo ha aceptado ${quien}. El tunel esta abierto: puedes contestar con  spoochie say ${fresco.id} "<texto>"`);
@@ -632,6 +666,7 @@ async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): 
 }
 
 async function closeThread(t: T.Thread, reason: string, bySession?: string) {
+  cerrarDialogo(t.id);
   t.state = "closed";
   t.closedAt = Date.now();
   t.closeReason = reason;
