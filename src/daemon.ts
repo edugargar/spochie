@@ -131,8 +131,11 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
   // a el, no entra en la sesion donde trabaja la persona.
   const fresco = T.load(t.id) ?? t;
   fresco.to = { ...fresco.to, sessionId: ap.sess.sessionId, name: ap.sess.name, cwd, human: Cfg.load().human ?? fresco.to.human };
+  // Un spoochie que llega de fuera no tenia quien publicara su transcript: el demonio no
+  // puede, y la sesion interactiva no debe verlo. El aparte es una sesion de Claude: lo hace el.
+  if (Cfg.load().transcript && !fresco.transcriptOwner) fresco.transcriptOwner = ap.sess.sessionId;
   T.save(fresco);
-  const primero = Ap.primerTurno(fresco, ap.sess.sessionId, Ap.comandoCli(), cwd);
+  const primero = conTranscript(fresco, ap.sess.sessionId, Ap.primerTurno(fresco, ap.sess.sessionId, Ap.comandoCli(), cwd));
 
   if (ap.modo === "fondo") {
     Ap.turnoStdin(ap, primero);
@@ -148,8 +151,9 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
     if (!fondo) { apartes.delete(t.id); return null; }
     const f2 = T.load(t.id) ?? fresco;
     f2.to = { ...f2.to, sessionId: fondo.sess.sessionId, name: fondo.sess.name };
+    if (f2.transcriptOwner === ap.sess.sessionId) f2.transcriptOwner = fondo.sess.sessionId;
     T.save(f2);
-    Ap.turnoStdin(fondo, Ap.primerTurno(f2, fondo.sess.sessionId, Ap.comandoCli(), cwd));
+    Ap.turnoStdin(fondo, conTranscript(f2, fondo.sess.sessionId, Ap.primerTurno(f2, fondo.sess.sessionId, Ap.comandoCli(), cwd)));
     for (const x of ap.cola) Ap.turnoStdin(fondo, x);
     return fondo.sess;
   }

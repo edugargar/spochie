@@ -41,10 +41,12 @@ export function herramientasPermitidas(cli = comandoCli(), conRtk = Boolean(Bun.
   // lectura en la practica: `git diff --output=<fichero>` podria escribir uno, y el patron
   // de allowedTools no filtra argumentos. Se asume y se dice.
   const git = ["diff", "log", "show", "status", "branch --list", "blame", "grep", "ls-files"].map(g => `git ${g}`);
-  const sp = ["say", "patch", "branch", "show", "list", "close"].map(c => `${cli} ${c}`);
+  const sp = ["say", "patch", "branch", "show", "list", "close", "transcript"].map(c => `${cli} ${c}`);
   const cmds = [...git, ...sp];
   const bash = [...cmds, ...(conRtk ? cmds.map(c => `rtk ${c}`) : [])].map(c => `Bash(${c}:*)`);
-  return ["Read", "Grep", "Glob", ...bash];
+  // Artifact: el aparte publica el transcript de los spoochies que llegan, que el demonio
+  // no puede publicar y la sesion interactiva no debe ver.
+  return ["Read", "Grep", "Glob", "Artifact", ...bash];
 }
 
 /** Lo que el Claude aparte no puede hacer ni aunque el modo de permisos lo dejara:

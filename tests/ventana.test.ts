@@ -86,7 +86,7 @@ sleep 60
   chmodSync(join(bin, "claude"), 0o755); chmodSync(join(bin, "abridor"), 0o755);
 
   mkdirSync(join(HOME, "sessions"), { recursive: true, mode: 0o700 });
-  writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: true, human: "Edu" }), { mode: 0o600 });
+  writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: false, transcript: true, aparte: true, human: "Edu" }), { mode: 0o600 });
   for (const [id, box, cwd] of [["VA", A, REPO_A], ["VB", B, REPO_B]] as const) {
     writeFileSync(join(HOME, "sessions", `${id}.json`),
       JSON.stringify({ sessionId: id, name: `repo-${id.toLowerCase()}`, cwd, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }),
@@ -102,6 +102,10 @@ sleep 60
   expect(open.ok).toBe(true);
   expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
   const antesB = B.got.length;
+  // Un spoochie que llega de otra maquina no tiene quien publique su transcript: se simula
+  // quitandole el dueno que `open` le puso aqui. El aparte tiene que quedarselo.
+  const ruta = join(HOME, "threads", `${open.id}.json`);
+  const hilo = JSON.parse(readFileSync(ruta, "utf8")); delete hilo.transcriptOwner; writeFileSync(ruta, JSON.stringify(hilo));
 
   const acc = await rpc({ op: "accept", sessionId: "VB", id: open.id, by: "Edu" });
   expect(acc.ok).toBe(true);
@@ -118,6 +122,10 @@ sleep 60
   expect(V.got[0]).toContain("Asunto: el boton");
   expect(V.got[0]).toContain("mira tu Button");
   expect(V.got[0]).toContain(`desde ${REPO_B}`);
+  // Y el encargo de publicar el transcript va con el, no con la sesion interactiva.
+  expect(V.got[0]).toContain("republica el transcript");
+  expect(V.got[0]).toContain(`spoochie transcript ${open.id} --url`);
+  expect(B.got.join("\n")).not.toContain("republica el transcript");
   expect(V.got[1]).toContain("min-width");
 
   // Un turno mas va directo por el socket de la ventana.

@@ -374,7 +374,9 @@ spoochie is for clues, not for moving binaries.
 
 It republishes itself. The daemon keeps the HTML current but can't publish an Artifact,
 which is a tool of the Claude session, so the republish request rides along with the turn
-that session is already receiving. The one who opened the spoochie publishes it.
+that session is already receiving. For a spoochie you open, your session publishes it.
+For one that arrives, the Claude on the side publishes it from its window, so your
+working session never sees the request and the link still shows up in the Slack thread.
 
 ## Checking it works
 
