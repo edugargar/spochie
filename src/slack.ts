@@ -46,6 +46,9 @@ export type Envelope = {
   /** Clave publica de quien firma y firma de (id, kind, from, texto). Ver firma.ts. */
   pk?: string;
   sig?: string;
+  /** En el aviso que se deja en el DM del receptor: donde esta el hilo de verdad
+   *  (el grupo o el canal). Sin esto, el hilo es el propio mensaje. */
+  thread?: { channel: string; ts: string };
 };
 
 /** Slack corta cada bloque a 3000 caracteres. Trocear por lineas en vez de rebanar,
@@ -351,10 +354,36 @@ export class SlackBridge {
     return hit ? { id: hit.id, name: hit.profile?.real_name ?? hit.name } : null;
   }
 
+  /** Donde va a vivir el hilo de un spoochie que abro yo.
+   *
+   *  Con el hilo en el DM entre el bot y quien recibe, quien abre no lo veia en Slack:
+   *  Edu le abrio uno a Alex y solo Alex tenia la conversacion delante. Ahora, por
+   *  defecto, el hilo va a un grupo de mensajes directos bot + yo + la otra persona,
+   *  que vemos los dos. El DM del receptor con el bot sigue recibiendo un aviso con la
+   *  invitacion entera, porque es el unico canal que su demonio vigila; ese aviso lleva
+   *  en el sobre donde esta el hilo de verdad. Si la app no tiene mpim:write, el
+   *  grupo no se puede abrir y el hilo se queda en el DM, como antes. */
+  private async hogar(t: T.Thread, dm: string): Promise<{ channel: string; tipo: "grupo" | "canal" | "dm" }> {
+    const c = Cfg.load().slack;
+    const modo = c?.hilos ?? "grupo";
+    if (modo === "canal" && c?.canal) return { channel: c.canal, tipo: "canal" };
+    if (modo === "grupo") {
+      try {
+        const g = await this.call("conversations.open", { users: `${this.me},${t.to.slackUser}` });
+        if (g?.channel?.id) return { channel: g.channel.id, tipo: "grupo" };
+      } catch (e) {
+        if (!this.avisadoSinGrupo) { this.avisadoSinGrupo = true; console.error(`spoochie: no puedo abrir el grupo bot+tu+${t.to.human ?? t.to.name} (${String(e).replace(/^Error: /, "")}); el hilo va al DM del receptor. Anade mpim:write, mpim:read y mpim:history a la app de Slack.`); }
+      }
+    }
+    return { channel: dm, tipo: "dm" };
+  }
+  private avisadoSinGrupo = false;
+
   async openThread(t: T.Thread): Promise<{ channel: string; ts: string } | null> {
-    // El DM entre el bot y quien recibe: el mismo canal que esa persona consultara.
+    // El DM entre el bot y quien recibe: el canal que su demonio vigila.
     const im = await this.call("conversations.open", { users: t.to.slackUser });
-    const channel: string = im.channel.id;
+    const dm: string = im.channel.id;
+    const { channel, tipo } = await this.hogar(t, dm);
     const env: Envelope = {
       v: 1, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
       subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
@@ -367,6 +396,19 @@ export class SlackBridge {
       metadata: { event_type: EVENT, event_payload: env },
       unfurl_links: false,
     });
+    if (tipo !== "dm") {
+      // El aviso en el DM del receptor: la misma invitacion, con el sobre apuntando al
+      // hilo de verdad, y un enlace para la persona.
+      let enlace = tipo === "grupo" ? "vuestro grupo con el bot" : "el canal de spoochie";
+      try { const p = await this.call("chat.getPermalink", { channel, message_ts: post.ts }); if (p?.permalink) enlace = `<${p.permalink}|${enlace}>`; } catch {}
+      await this.call("chat.postMessage", {
+        channel: dm,
+        text: `Spoochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
+        blocks: [...inviteBlocks(t), ctx(`La conversacion sigue en ${enlace}, donde la veis los dos.`)],
+        metadata: { event_type: EVENT, event_payload: { ...env, thread: { channel, ts: post.ts } } },
+        unfurl_links: false,
+      });
+    }
     // Los ficheros del primer mensaje se suben al hilo recien creado. Antes solo los
     // subia post(), asi que una captura adjunta al abrir se quedaba en la maquina.
     for (const f of t.messages[0]?.files ?? []) {
@@ -565,6 +607,9 @@ export class SlackBridge {
       // Sin sobre: lo ha escrito una persona a mano en Slack.
       const texto = (rep.text ?? "").trim();
       const esMio = rep.user === this.me;
+      // En un grupo escriben los dos. Mientras el tunel esta pendiente, solo quien recibe
+      // puede abrirlo escribiendo: lo que diga la otra persona antes de eso no cuenta.
+      if (t.state === "pending" && rep.user !== t.to.slackUser) continue;
 
       // Yo soy quien recibe y escribo en el hilo estando pendiente: eso ES aceptar.
       // Antes mi propio demonio se saltaba mis mensajes y el tunel no se abria nunca
@@ -645,7 +690,8 @@ export class SlackBridge {
       }
       // Un spoochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
       if (T.yaVisto(env.id)) continue;
-      await this.materialize(env, ch, msg.thread_ts ?? msg.ts, bodyFromBlocks(msg.blocks));
+      // El aviso del DM puede apuntar al hilo de verdad (un grupo o un canal).
+      await this.materialize(env, env.thread?.channel ?? ch, env.thread?.ts ?? msg.thread_ts ?? msg.ts, bodyFromBlocks(msg.blocks));
     }
   }
 

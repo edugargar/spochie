@@ -112,7 +112,7 @@ sequenceDiagram
     participant B as Bob
 
     CA->>DA: spoochie open @bob --subject "the modal breaks"
-    DA->>S: posts the invitation in the DM
+    DA->>S: posts the invitation in the group DM (bot + Alice + Bob), and a pointer in Bob's bot DM
     S-->>B: notification
     DB->>S: discovers the invitation
     DB->>B: macOS dialog: "Alice wants to open a spoochie" [Que pase]
@@ -251,7 +251,7 @@ spoochie branch <id> <branch>
 spoochie close <id> --reason "..."
 spoochie list | show <id> | transcript <id>
 spoochie search "<text>"              across every spoochie on this machine
-spoochie config --human "Alice" --guardian on|off --transcript on|off
+spoochie config --human "Alice" --guardian on|off --transcript on|off --hilos grupo|canal|dm [--canal C0…]
 ```
 
 When someone opens one for you, you get a DM from the bot. Replying in that thread is
@@ -344,16 +344,31 @@ What you should know:
 
 ## Slack, inside
 
-Everything goes through the **DM between the bot and each person**. That DM is the same
-channel seen from both sides, so each machine polls exactly one channel for what arrives,
-plus one thread per open spoochie.
+Two places, two jobs. The **DM between the bot and each person** is the mailbox: it is
+the one channel each machine polls for what arrives. The **thread of each spoochie**
+lives, by default, in a **group DM with the bot, you and the other person**, so both of
+you see the whole conversation in Slack. (The first version kept the thread in the
+receiver's bot DM, and the person who opened it never saw it in Slack.) When you open a
+spoochie, the daemon posts the invitation in that group and drops the same invitation in
+the receiver's bot DM with a pointer to the group; their daemon follows the pointer and
+polls the group thread from then on.
 
-The app needs `chat:write`, `im:write`, `im:read` and `im:history` as bot scopes. That's
-all for the normal path: `spoochie invite --to` resolves the newcomer on the inviter's
-side, and the invitation carries both ids, so nobody is looked up in Slack afterwards.
-`users:read` and `users:read.email` (bot scopes) are only needed to invite by email or
-by name instead of by Slack id, and for `@someone` who isn't in your local contacts.
-No user token is needed for anything.
+`spoochie config --hilos` picks where threads live:
+
+- `grupo` (default): a group DM per pair. Private to the two of you. Needs `mpim:write`,
+  `mpim:read` and `mpim:history` on the bot; without them the daemon says so once and
+  falls back to `dm`.
+- `canal --canal C0…`: one channel for every spoochie of the team. Everyone in the channel
+  sees everything, which may be the point. Invite the bot to the channel.
+- `dm`: the receiver's bot DM only. The opener sees replies in their terminal, not in Slack.
+
+Bot scopes for the normal path: `chat:write`, `im:write`, `im:read`, `im:history`, plus
+the three `mpim:*` above for group threads. `spoochie invite --to` resolves the newcomer
+on the inviter's side, and the invitation carries both ids, so nobody is looked up in
+Slack afterwards. `users:read` and `users:read.email` are only needed to invite by email
+or by name, and for `@someone` who isn't in your local contacts. No user token is needed
+for anything. Both machines need 0.7.1 or later for group threads: an older receiver
+ignores the pointer and answers in its DM.
 
 Alternatives I tried and dropped, with the measurement:
 
@@ -381,7 +396,10 @@ spoochie is for clues, not for moving binaries.
 
 ## The transcript
 
-It republishes itself. The daemon keeps the HTML current but can't publish an Artifact,
+Off by default, and we turned it off for ourselves too: the Slack thread already is the
+shared record, and publishing costs the opener's session one Artifact call per turn. The
+HTML file in `~/.claude/spoochie/transcripts/` is written regardless, for free, and
+`spoochie show <id>` reads the thread. If you turn it on, it republishes itself. The daemon keeps the HTML current but can't publish an Artifact,
 which is a tool of the Claude session, so the republish request rides along with the turn
 that session is already receiving. For a spoochie you open, your session publishes it.
 For one that arrives, the Claude on the side publishes it from its window, so your

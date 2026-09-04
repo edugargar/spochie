@@ -33,6 +33,13 @@ export type Config = {
     botTokenKey?: string;
     /** Tu id de usuario en Slack, para saber que mensajes del hilo son tuyos. */
     userId: string;
+    /** Donde vive el hilo de cada spoochie que abres. "grupo": un grupo de mensajes
+     *  directos bot + tu + la otra persona, que veis los dos (necesita mpim:write,
+     *  mpim:read y mpim:history en la app). "canal": un canal fijo (`canal`), que ve
+     *  todo el que este en el. "dm": el DM entre el bot y quien recibe, que tu no ves.
+     *  Por defecto "grupo", y si la app no tiene los permisos se cae a "dm" avisando. */
+    hilos?: "grupo" | "canal" | "dm";
+    canal?: string;
     /** Cada cuanto se miran los hilos abiertos. */
     pollMs: number;
   };

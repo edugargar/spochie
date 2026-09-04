@@ -111,7 +111,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
   spoochie doctor                        repasa lo que tiene que estar bien para entregar
-  spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off]
+  spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--hilos grupo|canal|dm] [--canal C0..]
       aparte: los spoochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
   spoochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
 
@@ -193,11 +193,19 @@ async function main() {
     if (flag(rest, "guardian")) c.guardian = flag(rest, "guardian") === "on";
     if (flag(rest, "transcript")) c.transcript = flag(rest, "transcript") === "on";
     if (flag(rest, "aparte")) c.aparte = flag(rest, "aparte") === "on";
+    const hilos = flag(rest, "hilos");
+    if (hilos && c.slack) {
+      if (!["grupo", "canal", "dm"].includes(hilos)) { console.error("spoochie: --hilos grupo | canal | dm"); process.exit(1); }
+      c.slack.hilos = hilos as "grupo" | "canal" | "dm";
+    }
+    if (flag(rest, "canal") && c.slack) c.slack.canal = flag(rest, "canal");
     Cfg.save(c);
     console.log(JSON.stringify({
       ...c,
       slack: c.slack ? {
         userId: c.slack.userId,
+        hilos: c.slack.hilos ?? "grupo",
+        canal: c.slack.canal,
         origen: c.slack.tokenFile ? `${c.slack.tokenFile} (${c.slack.tokenKey})` : "token guardado aqui",
         valido: Boolean(Cfg.slackToken(c)),
       } : undefined,

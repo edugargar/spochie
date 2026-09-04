@@ -188,3 +188,59 @@ test("un sobre con un id que no es un id no es un sobre", () => {
   expect(envelopeOf(msg("x".repeat(40)))).toBeNull();
   expect(envelopeOf(msg("e856"))).not.toBeNull();
 });
+
+function puenteAbrir(fallaGrupo = false) {
+  const llamadas: { method: string; body: any }[] = [];
+  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+  b.call = async (method: string, body: any) => {
+    llamadas.push({ method, body });
+    if (method === "conversations.open") {
+      const users = String(body.users);
+      if (users.includes(",")) { if (fallaGrupo) throw new Error("slack conversations.open: missing_scope"); return { channel: { id: "G_GRUPO" } }; }
+      return { channel: { id: "D_ALEX" } };
+    }
+    if (method === "chat.postMessage") return { ts: body.channel === "G_GRUPO" ? "200.000" : "201.000" };
+    if (method === "chat.getPermalink") return { permalink: "https://x.slack.com/archives/G_GRUPO/p200000" };
+    return {};
+  };
+  return { b, llamadas };
+}
+
+test("el hilo de un spoochie que abro va a un grupo que vemos los dos, y el DM del receptor recibe el aviso con el puntero", async () => {
+  const Cfg = await import("../src/config.ts");
+  Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "grupo" } } as any);
+  const { b, llamadas } = puenteAbrir();
+  const r = await b.openThread(t);
+  expect(r).toEqual({ channel: "G_GRUPO", ts: "200.000" });
+  const abiertos = llamadas.filter(l => l.method === "conversations.open").map(l => l.body.users);
+  expect(abiertos).toContain("U_ALEX");
+  expect(abiertos).toContain("U_EDU,U_ALEX");
+  const posts = llamadas.filter(l => l.method === "chat.postMessage");
+  expect(posts.map(p => p.body.channel)).toEqual(["G_GRUPO", "D_ALEX"]);
+  // El aviso del DM lleva el sobre completo y donde esta el hilo; el del grupo, no.
+  expect(posts[0].body.metadata.event_payload.thread).toBeUndefined();
+  expect(posts[1].body.metadata.event_payload.thread).toEqual({ channel: "G_GRUPO", ts: "200.000" });
+  expect(flat(posts[1].body.blocks)).toContain("La conversacion sigue en");
+  // Y el receptor materializa el hilo en el grupo, no en su DM.
+  const env = envelopeOf({ metadata: { event_type: EVENT, event_payload: posts[1].body.metadata.event_payload } })!;
+  expect(env.thread!.channel).toBe("G_GRUPO");
+});
+
+test("sin permisos para grupos, el hilo se queda en el DM del receptor, como antes", async () => {
+  const Cfg = await import("../src/config.ts");
+  Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "grupo" } } as any);
+  const { b, llamadas } = puenteAbrir(true);
+  const r = await b.openThread(t);
+  expect(r).toEqual({ channel: "D_ALEX", ts: "201.000" });
+  expect(llamadas.filter(l => l.method === "chat.postMessage").length).toBe(1);
+});
+
+test("con --hilos canal, el hilo va al canal y el aviso al DM", async () => {
+  const Cfg = await import("../src/config.ts");
+  Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "canal", canal: "C_SPOOCHIE" } } as any);
+  const { b, llamadas } = puenteAbrir();
+  const r = await b.openThread(t);
+  expect(r.channel).toBe("C_SPOOCHIE");
+  expect(llamadas.filter(l => l.method === "chat.postMessage").map(l => l.body.channel)).toEqual(["C_SPOOCHIE", "D_ALEX"]);
+  Cfg.save({ guardian: false, transcript: false } as any);
+});
