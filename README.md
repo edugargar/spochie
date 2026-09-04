@@ -283,7 +283,10 @@ Not in a policy document: built, each with its test.
   another key is discarded and the thread is told. Unsigned envelopes still deliver,
   labelled as such.
 - **"delivered" doesn't lie.** Over Slack a message leaves with a delay; until it leaves
-  the response says `encolado` (queued), and if publishing fails the sending session is told.
+  `say` waits up to 8 s for it to actually leave and then says `publicado`; only if it
+  takes longer does it say `encolado` (queued), and if publishing fails the sending session
+  is told. The silence warning lists facts (when your last message left, when the other
+  side accepted, when their last message arrived) so the Claude reading it doesn't guess.
 
 ## Security model
 

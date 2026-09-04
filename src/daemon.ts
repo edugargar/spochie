@@ -310,23 +310,31 @@ async function handle(req: Req): Promise<any> {
       // Cuando sale por Slack el envio va con retraso, asi que se dice "encolado":
       // decir "entregado" antes de que salga es exactamente la mentira que hace que
       // nadie se fie de un canal.
-      let delivered: boolean | "encolado" | "retenido";
+      let delivered: boolean | "encolado" | "publicado" | "retenido";
       if (sessById(other.sessionId)) {
         // El otro lado esta en esta maquina: aqui se es receptor, y el vigilante
         // mira antes de que entre en su sesion.
         delivered = await vigilar(t, m) ? await sendToSide(t, other, T.renderMessage(t, m, other.sessionId), m) : "retenido";
       } else {
-        delivered = "encolado";
+        // Sale por Slack con un pequeno retraso (la cola une mensajes seguidos). Se espera
+        // a que salga de verdad, hasta 8 s, para poder decir "publicado" y no "encolado":
+        // en la primera prueba real el Claude emisor leyo "encolado" como "atascado" y
+        // cerro el tunel dando por perdidos mensajes que habian salido en 3 s.
+        let avisarSalida: (ok: boolean) => void = () => {};
+        const salida = new Promise<boolean>(r => { avisarSalida = r; });
         encolar(t, m, async (tt, mm) => {
           const otro = T.otherSide(tt, req.sessionId);
           const ok = await sendToSide(tt, otro, T.renderMessage(tt, mm, otro.sessionId), mm);
           log("salida", tt.id, ok ? "publicado en Slack" : "FALLO al publicar");
+          avisarSalida(ok);
           if (ok && slack) await slack.pensandoOn(tt, otro.human ?? otro.name);
           if (!ok) {
             const yo = sessById(T.mySide(tt, req.sessionId).sessionId);
             if (yo) await send(yo, `[spoochie ${tt.id}] tu mensaje NO salio a Slack. No des por hecho que lo ha leido.`);
           }
         });
+        const salio = await Promise.race([salida, new Promise<null>(r => setTimeout(() => r(null), 8_000))]);
+        delivered = salio === true ? "publicado" : salio === false ? false : "encolado";
       }
       await refreshTranscript(t);
       log("say", t.id, req.sessionId, m.kind, m.offTopic?.verdict ?? "-", delivered ? "entregado" : "FALLO");
@@ -658,7 +666,7 @@ async function tick() {
       T.save(t);
       for (const side of [t.from, t.to]) {
         const s = sessById(side.sessionId);
-        if (s) await send(s, T.renderAviso(t, (due - now) / 1000));
+        if (s) await send(s, T.renderAviso(t, (due - now) / 1000, side.sessionId));
       }
       log("aviso-silencio", t.id);
     }

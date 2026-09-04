@@ -160,3 +160,15 @@ test("si el de fuera escribe la marca, se le quita", () => {
   const suya = conMarca.match(/<<<spoochie:([0-9a-f]{8})/)![1];
   expect(conMarca.split(`spoochie:${suya}>>>`).length).toBe(2);
 });
+
+test("el aviso de silencio trae hechos, no deja hueco a deducir que el otro lado esta caido", async () => {
+  const T = await import("../src/threads.ts");
+  const t: any = { id: "s1", subject: "la cli", state: "open", createdAt: 0, lastActivityAt: 0, acceptedAt: Date.UTC(2026, 8, 4, 15, 58), context: {},
+    from: { sessionId: "A", name: "a", cwd: "/a", human: "Edu" }, to: { sessionId: "slack:U1", name: "Alex", cwd: "(otra maquina)", human: "Alex" },
+    messages: [{ at: Date.UTC(2026, 8, 4, 16, 6), from: "A", author: "claude", kind: "text", text: "sigo aqui" }] };
+  const a = T.renderAviso(t, 180, "A");
+  expect(a).toContain("salio a las 16:06 UTC");
+  expect(a).toContain("Alex acepto a las 15:58 UTC");
+  expect(a).toContain("de su lado no ha llegado nada");
+  expect(a).toContain("No lo deduzcas");
+});

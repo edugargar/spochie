@@ -428,7 +428,11 @@ async function main() {
         : rest.slice(1).find(a => !a.startsWith("--"));
       if (!id || !text?.trim()) { console.error("falta el texto del mensaje\n" + USAGE); process.exit(2); }
       if (text.length > MAX_MENSAJE) { console.error(`el mensaje pasa de ${MAX_MENSAJE} caracteres (${text.length}). Cortalo tu o manda un parche.`); process.exit(2); }
-      out(await rpc({ op: "say", sessionId: me.sessionId, id, text, files: fileList(rest), author: has(args(rest, 2), "human") ? "human" : "claude" }));
+      const r = await rpc({ op: "say", sessionId: me.sessionId, id, text, files: fileList(rest), author: has(args(rest, 2), "human") ? "human" : "claude" });
+      out(r);
+      if (r?.delivered === "publicado") console.log("Publicado en el hilo de Slack. La respuesta del otro lado te llegara aqui como un turno mas; no hay que hacer nada.");
+      else if (r?.delivered === "encolado") console.log("En cola: sale a Slack en unos segundos. Si fallara, te lo diria aqui mismo. No lo des por atascado.");
+      else if (r?.delivered === "retenido") console.log("Retenido por el vigilante del otro lado hasta que su persona lo suelte.");
       break;
     }
     case "patch": {

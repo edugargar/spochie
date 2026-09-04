@@ -297,11 +297,28 @@ export function tareaTranscript(t: Thread, sessionId: string, ruta: string): str
   ].join("\n");
 }
 
-export function renderAviso(t: Thread, quedanSeg: number): string {
+const hora = (ms: number) => new Date(ms).toISOString().slice(11, 16) + " UTC";
+
+/** El aviso de silencio, con los hechos delante. Sin ellos, el Claude que lo recibe se
+ *  los inventa: en la primera prueba real dedujo "el otro lado no tuvo sesion viva" y
+ *  cerro el tunel con esa acusacion, cuando su mensaje habia salido a Slack en 3 s y lo
+ *  unico cierto era que el otro no habia contestado. */
+export function renderAviso(t: Thread, quedanSeg: number, forSession?: string): string {
+  const yo = forSession ? mySide(t, forSession) : t.from;
+  const otro = forSession ? otherSide(t, forSession) : t.to;
+  const mios = t.messages.filter(m => m.from === yo.sessionId);
+  const suyos = t.messages.filter(m => m.from !== yo.sessionId && m.author !== "spoochie");
+  const ultimoMio = mios.at(-1), ultimoSuyo = suyos.at(-1);
+  const hechos = [
+    ultimoMio ? `tu ultimo mensaje salio a las ${hora(ultimoMio.at)} y esta publicado en el hilo` : null,
+    t.acceptedAt ? `${otro.human ?? otro.name} acepto a las ${hora(t.acceptedAt)}` : `${otro.human ?? otro.name} todavia no ha aceptado`,
+    ultimoSuyo ? `lo ultimo suyo llego a las ${hora(ultimoSuyo.at)}` : `de su lado no ha llegado nada todavia`,
+  ].filter(Boolean).join("; ");
   return [
     `[spoochie ${t.id} | ${t.subject}] lleva un rato en silencio y se cierra solo en ${Math.round(quedanSeg / 60)} min.`,
-    `Si sigues en ello, dilo con  spoochie say ${t.id} "..."  y el reloj se reinicia.`,
-    `Si ya esta, cierralo tu:  spoochie close ${t.id} --reason "..."`,
+    `Hechos: ${hechos}.`,
+    `Que no ha contestado no dice por que: su persona puede no estar delante. No lo deduzcas ni se lo eches en cara por el tunel.`,
+    `Si sigues en ello, dilo con  spoochie say ${t.id} "..."  y el reloj se reinicia. Si ya esta, cierralo:  spoochie close ${t.id} --reason "..."`,
   ].join("\n");
 }
 
