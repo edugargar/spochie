@@ -13,8 +13,12 @@ $ARGUMENTS
 
 ## Pasos
 
-1. `bun --version`. Si no existe, para aqui y dile que instale Bun (`curl -fsSL https://bun.sh/install | bash`)
-   y vuelva a pegar la invitacion. El hook de spoochie corre con Bun y sin el no arranca nada.
+1. No hace falta instalar nada: `spoochie` corre con el binario que el hook de arranque se
+   bajo y verifico (o con Bun si ya lo tiene). NO le pidas que instale Bun. Si el comando
+   del paso 2 falla con "neither the verified binary nor Bun is available", es que la
+   sesion arranco sin el hook: dile que reinicie Claude Code y vuelva a pegar la invitacion.
+   Solo si tras reiniciar el hook dice que no pudo descargar el binario, Bun es la alternativa
+   (`curl -fsSL https://bun.sh/install | bash`).
 2. `spoochie join <lo que ha pegado, entero, tal cual>`. El comando limpia solo lo que sobra
    (el "spoochie join" de delante, las comillas de Slack, la barra del plugin). El email lo
    saca de `git config user.email`; si Slack no lo reconoce, el error dice cual probo.
