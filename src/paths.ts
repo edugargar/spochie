@@ -20,6 +20,7 @@ export const THREADS_DIR = join(ROOT, "threads");
 export const DAEMON_SOCK = join(ROOT, "daemon.sock");
 export const DAEMON_LOCK = join(ROOT, "daemon.pid");
 export const DAEMON_LOG = join(ROOT, "daemon.log");
+export const OUTBOX_FILE = join(ROOT, "outbox.json");
 
 export function ensureDirs() {
   for (const d of [ROOT, SESSIONS_DIR, THREADS_DIR]) mkdirSync(d, { recursive: true, mode: 0o700 });

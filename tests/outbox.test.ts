@@ -74,3 +74,32 @@ test("cada lado tiene su propia ventana: no se mezclan las voces", async () => {
   expect(salidas.length).toBe(2);
   expect(salidas.map(m => m.text).sort()).toEqual(["digo el otro", "digo yo"]);
 });
+
+test("lo pendiente se apunta en disco, un demonio nuevo lo reanuda, y lo que falla se reintenta", async () => {
+  const { encolar, reanudar, pendientes } = await import("../src/outbox.ts");
+  const { OUTBOX_FILE } = await import("../src/paths.ts");
+  const { existsSync, readFileSync } = await import("node:fs");
+  const Tm = await import("../src/threads.ts");
+  const t: any = { id: "ob9", subject: "s", state: "open", createdAt: 0, lastActivityAt: 0, context: {}, messages: [],
+    from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "slack:U1", name: "b", cwd: "(otra)" } };
+  Tm.save(t);
+  const salidas: string[] = [];
+  let falla = true;
+  const salida = async (_t: any, m: any) => { salidas.push(m.text); return !falla; };
+  encolar(t, { at: 1, from: "A", author: "claude", kind: "text", text: "uno" } as any, salida, 30);
+  // Antes de que pase la ventana ya esta en disco.
+  expect(existsSync(OUTBOX_FILE)).toBe(true);
+  expect(readFileSync(OUTBOX_FILE, "utf8")).toContain("uno");
+  await new Promise(r => setTimeout(r, 120));
+  // Salio, fallo, y sigue apuntado con el fallo contado.
+  expect(salidas).toEqual(["uno"]);
+  expect(pendientes()).toBe(1);
+  expect(JSON.parse(readFileSync(OUTBOX_FILE, "utf8"))[0].fallos).toBe(1);
+  // Un "demonio nuevo" reanuda lo del fichero y esta vez Slack acepta: el fichero desaparece.
+  falla = false;
+  reanudar(salida);
+  await new Promise(r => setTimeout(r, 120));
+  expect(salidas).toEqual(["uno", "uno"]);
+  expect(pendientes()).toBe(0);
+  expect(existsSync(OUTBOX_FILE)).toBe(false);
+});
