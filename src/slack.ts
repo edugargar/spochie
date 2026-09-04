@@ -21,6 +21,7 @@
 import * as Cfg from "./config.ts";
 import { misClaves, firmar, verificarSobre, type Veredicto } from "./firma.ts";
 import * as T from "./threads.ts";
+import { VERSION, linea, masNuevaQue } from "./version.ts";
 import { subir, bajar } from "./files.ts";
 
 const API = "https://slack.com/api/";
@@ -49,6 +50,8 @@ export type Envelope = {
   /** En el aviso que se deja en el DM del receptor: donde esta el hilo de verdad
    *  (el grupo o el canal). Sin esto, el hilo es el propio mensaje. */
   thread?: { channel: string; ts: string };
+  /** La version de spoochie de quien lo manda. Sin ella, es anterior a 0.8. */
+  app?: string;
 };
 
 /** Slack corta cada bloque a 3000 caracteres. Trocear por lineas en vez de rebanar,
@@ -316,6 +319,20 @@ export class SlackBridge {
     return this.team;
   }
 
+  /** Que version corre el otro lado. Si es una linea anterior a la mia, se dice UNA vez
+   *  en el hilo: hasta ahora la unica pista era que algo no funcionaba. Solo avisa el
+   *  lado mas nuevo, para no decirlo dos veces. */
+  private async notarVersion(t: T.Thread, env: Envelope) {
+    const otra = env.app ?? "0.7.1";
+    const fresco = T.load(t.id) ?? t;
+    if (fresco.versionOtro !== otra) { fresco.versionOtro = otra; T.save(fresco); }
+    if (fresco.avisoVersion || linea(otra) === linea(VERSION) || !masNuevaQue(VERSION, otra) || !fresco.slack) return;
+    fresco.avisoVersion = true;
+    T.save(fresco);
+    const quien = env.from === fresco.from.slackUser ? (fresco.from.human ?? fresco.from.name) : (fresco.to.human ?? fresco.to.name);
+    await this.aviso(fresco, `:information_source: ${quien} tiene spoochie ${otra} y aqui hay ${VERSION}. Puede que algo no le funcione igual: \`/plugin update spoochie@edugargar\` y reiniciar una sesion.`);
+  }
+
   /** El DM entre el bot y yo: el unico canal que hay que mirar para lo que me llega. */
   private async inbox(): Promise<string | null> {
     if (this.myDm) return this.myDm;
@@ -580,6 +597,7 @@ export class SlackBridge {
       if (rep.subtype && rep.subtype !== "file_share") continue;
 
       const env = envelopeOf(rep);
+      if (env) await this.notarVersion(t, env);
       if (env) {
         // Lo postea spoochie. Los dos lados postean como el bot, asi que quien habla
         // solo se sabe por el sobre. Sin esto un demonio se salta al otro.
@@ -656,6 +674,7 @@ export class SlackBridge {
   /** Firma el sobre con mis claves. Si no hay claves (config de antes del alta con
    *  firma), el sobre sale sin firmar y el otro lado lo vera marcado. */
   private firma(env: Envelope, text: string) {
+    env.app = VERSION;
     const c = Cfg.load();
     if (!c.slack) return;
     const k = misClaves(c);

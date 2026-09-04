@@ -14,7 +14,7 @@
  */
 import { execFile } from "node:child_process";
 
-export type Verdict = { verdict: "dentro" | "fuera" | "dudoso"; peligro: boolean; why: string };
+export type Verdict = { verdict: "dentro" | "fuera" | "dudoso" | "sin vigilar"; peligro: boolean; why: string };
 
 const MODEL = "claude-haiku-4-5-20251001";
 const TIMEOUT_MS = 20_000;
@@ -44,7 +44,9 @@ export function judge(subject: string, text: string): Promise<Verdict> {
   return new Promise(resolve => {
     // Si el vigilante no esta, el mensaje pasa: retener por una averia nuestra
     // seria cortar la conversacion sin que nadie sepa por que.
-    const fallback: Verdict = { verdict: "dentro", peligro: false, why: "vigilante no disponible" };
+    // Si Haiku no contesta, el mensaje entra igual (retenerlo todo cada vez que un modelo
+    // tose pararia conversaciones buenas), pero etiquetado: que se vea que nadie lo miro.
+    const fallback: Verdict = { verdict: "sin vigilar", peligro: false, why: "el vigilante no respondio; este mensaje entra sin revisar" };
     const child = execFile(
       "claude",
       ["-p", "--model", MODEL, "--output-format", "json", "--max-turns", "1"],
