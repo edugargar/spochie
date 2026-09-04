@@ -12,6 +12,11 @@ export type Config = {
   /** Los spoochies que llegan los atiende un Claude aparte (claude -p en el repo), no la
    *  sesion donde trabajas. Esa solo recibe el aviso. Apagado, todo entra en tu sesion. */
   aparte?: boolean;
+  /** El Claude aparte trabaja sobre una copia limpia del repo (git worktree de HEAD),
+   *  no sobre tu checkout: aunque algo se colara por la lista de herramientas, tus
+   *  ficheros no se tocan. Pega: lo que no este commiteado (.env, cambios locales) no
+   *  esta en la copia. Apagado, atiende en el checkout real. */
+  aparteCopia?: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
   contacts?: Record<string, { id: string; name: string; pk?: string }>;

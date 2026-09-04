@@ -25,7 +25,7 @@ export type Msg = {
   /** Rutas absolutas en la maquina del emisor. El receptor las abre con sus propios permisos. */
   files?: string[];
   /** Etiqueta del vigilante de tema. Nunca bloquea: quien decide es quien tiene el contexto. */
-  offTopic?: { verdict: "dentro" | "fuera" | "dudoso"; why: string };
+  offTopic?: { verdict: "dentro" | "fuera" | "dudoso" | "sin vigilar"; why: string };
   /** El vigilante lo retuvo al llegar: no ha entrado en la sesion. "suelto" cuando
    *  el humano receptor lo libera, "descartado" si lo tira. */
   retenido?: "si" | "suelto" | "descartado";
@@ -51,6 +51,11 @@ export type Thread = {
   context: { branch?: string; sha?: string; files?: string[] };
   /** URL del Artifact con el transcript, publicado por quien abre el spoochie. */
   transcriptUrl?: string;
+  /** Si el aparte trabaja en una copia (worktree), el checkout del que salio. */
+  copiaDe?: string;
+  /** La version de spoochie del otro lado, si su sobre la trae, y si ya se le aviso. */
+  versionOtro?: string;
+  avisoVersion?: boolean;
   /** Que sesion lo publico. Un Artifact pertenece a una cuenta y solo su dueno lo
    *  republica, asi que hay que saber a quien pedirselo. */
   transcriptOwner?: string;

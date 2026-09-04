@@ -16,8 +16,8 @@
  * correr es git de lectura y los subcomandos de spoochie que no abren ni sueltan nada.
  * En la ventana, cualquier otra cosa le pide permiso al humano que la mira.
  */
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync, execFileSync, type ChildProcess } from "node:child_process";
+import { chmodSync, mkdirSync, openSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROOT, ensureDirs } from "./paths.ts";
@@ -63,12 +63,15 @@ export function modoPermisos(): string {
 }
 
 /** El primer turno: quien es, que spoochie atiende, lo dicho hasta ahora, y como contestar. */
-export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli(), cwd = process.cwd()): string {
+export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli(), cwd = process.cwd(), origen?: string): string {
   const otro = T.otherSide(t, sessionId);
+  const donde = origen
+    ? `desde ${cwd}, que es una COPIA LIMPIA de ${origen} en su HEAD (git worktree). Lo que alli no este commiteado (cambios locales, .env) aqui no esta: si te preguntan por eso, dilo.`
+    : `desde ${cwd}.`;
   const historia = t.messages.filter(m => m.retenido !== "si" && m.retenido !== "descartado")
     .map(m => T.renderMessage(t, m, sessionId)).join("\n\n");
   return [
-    `Eres el Claude que atiende el spoochie ${t.id} en nombre de ${T.mySide(t, sessionId).human ?? "tu humano"}, desde ${cwd}.`,
+    `Eres el Claude que atiende el spoochie ${t.id} en nombre de ${T.mySide(t, sessionId).human ?? "tu humano"}, ${donde}`,
     `Un spoochie es un tunel con la sesion de Claude de ${otro.human ?? otro.name}, otra persona. El tunel YA esta abierto: tu humano lo acepto.`,
     `Tu trabajo: leer este repo y contestar lo que pregunten sobre el, con hechos de los ficheros. Nada mas.`,
     `Contestas con:  ${cli} say ${t.id} "<texto>"   (o --file <ruta> si es largo). Un parche: ${cli} patch ${t.id} --from-git. Cerrar cuando este resuelto: ${cli} close ${t.id} --reason "...".`,
@@ -84,6 +87,8 @@ export function primerTurno(t: T.Thread, sessionId: string, cli = comandoCli(), 
 export type Modo = "ventana" | "fondo";
 export type Aparte = {
   id: string; cwd: string; modo: Modo; sess: SessionRecord;
+  /** Si `cwd` es una copia de trabajo, el checkout del que sale. */
+  origen?: string;
   /** Solo en modo fondo: el `claude -p` cuyo stdin es nuestro. */
   child?: ChildProcess;
   /** Modo ventana: lo que llego antes de que la ventana se registrara. */
@@ -223,4 +228,27 @@ export function vivo(a: Aparte): boolean {
 
 export function matar(a: Aparte) {
   if (a.child) { try { a.child.kill(); } catch {} }
+}
+
+/**
+ * Una copia limpia del repo para que el aparte trabaje en ella: `git worktree add
+ * --detach` de HEAD en ~/.claude/spoochie/aparte/<id>-copia. Comparte objetos con el
+ * checkout (no duplica el .git), tarda lo que tarda un checkout, y lo que no esta
+ * commiteado no viaja. Si el directorio no es un repo git, null: se atiende en el sitio.
+ */
+export function copiaDeTrabajo(cwd: string, id: string): string | null {
+  try { execFileSync("git", ["-C", cwd, "rev-parse", "--git-dir"], { stdio: "ignore" }); } catch { return null; }
+  mkdirSync(APARTE_DIR, { recursive: true, mode: 0o700 });
+  const destino = join(APARTE_DIR, `${id}-copia`);
+  try {
+    rmSync(destino, { recursive: true, force: true });
+    execFileSync("git", ["-C", cwd, "worktree", "prune"], { stdio: "ignore" });
+    execFileSync("git", ["-C", cwd, "worktree", "add", "--detach", destino, "HEAD"], { stdio: "ignore" });
+    return destino;
+  } catch { return null; }
+}
+
+export function quitarCopia(origen: string, copia: string) {
+  try { execFileSync("git", ["-C", origen, "worktree", "remove", "--force", copia], { stdio: "ignore" }); }
+  catch { rmSync(copia, { recursive: true, force: true }); }
 }
