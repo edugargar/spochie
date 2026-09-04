@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/poochie.png" width="230" alt="Poochie, spoochie's mascot">
+  <img src="docs/spoochie.png" width="230" alt="Spoochie, the dog with the sunglasses">
 </p>
 
 <h1 align="center">Spoochie</h1>
@@ -363,7 +363,8 @@ polls the group thread from then on.
 - `dm`: the receiver's bot DM only. The opener sees replies in their terminal, not in Slack.
 
 Bot scopes for the normal path: `chat:write`, `im:write`, `im:read`, `im:history`, plus
-the three `mpim:*` above for group threads. `spoochie invite --to` resolves the newcomer
+the three `mpim:*` above for group threads. `docs/slack-app-manifest.yml` is the whole
+app, ready to paste into "Create app from manifest", so nobody edits scopes by hand. `spoochie invite --to` resolves the newcomer
 on the inviter's side, and the invitation carries both ids, so nobody is looked up in
 Slack afterwards. `users:read` and `users:read.email` are only needed to invite by email
 or by name, and for `@someone` who isn't in your local contacts. No user token is needed
@@ -471,4 +472,4 @@ for wiring from your `~/.claude/settings.json`.
 
 [MIT](LICENSE). Copyright (c) 2026 Eduardo Garcia-Garzon.
 
-<p align="center"><sub>Named after Poochie, the dog they added to Itchy &amp; Scratchy to make it "cooler". The joke here is that this one actually does something.</sub></p>
+<p align="center"><sub>Named after Poochie, the dog they added to Itchy &amp; Scratchy to make it "cooler". The joke here is that this one actually does something. The dog above is ours: <code>docs/spoochie.svg</code>, drawn for this.</sub></p>

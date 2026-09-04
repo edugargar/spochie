@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import * as T from "./threads.ts";
 // El logo, como icono del dialogo. Con `type: "file"` Bun lo empaqueta dentro del binario
 // compilado y aqui llega una ruta valida en los dos casos, fuente o binario.
-import poochie from "../docs/poochie.png" with { type: "file" };
+import poochie from "../docs/spoochie.png" with { type: "file" };
 
 export type Respuesta = "acepto" | "rechazo" | "slack" | null;
 export type Modo = "dialogo" | "terminal";
