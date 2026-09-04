@@ -5,9 +5,9 @@
  * caducado, un fichero con permisos flojos o un demonio muerto no dan error, solo hacen
  * que el mensaje no llegue y que nadie se entere.
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, SESSIONS_DIR, THREADS_DIR, DAEMON_SOCK, DAEMON_LOCK } from "./paths.ts";
+import { ROOT, SESSIONS_DIR, THREADS_DIR, DAEMON_SOCK, DAEMON_LOCK, OUTBOX_FILE } from "./paths.ts";
 import { liveSessions, permisosFlojos } from "./registry.ts";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
@@ -110,6 +110,26 @@ export async function revisar(): Promise<Chequeo[]> {
     que: "transcript",
     detalle: c.transcript ? "encendido: se pide republicar en cada turno a quien abrio" : "apagado",
   });
+
+  out.push({
+    ok: true,
+    que: "Claude aparte",
+    detalle: c.aparte === false ? "apagado: todo entra en tu sesion" : `encendido${c.aparteCopia === false ? ", en el checkout real" : ", sobre una copia limpia del repo"}`,
+  });
+
+  {
+    const { VERSION } = await import("./version.ts");
+    const { avisoNueva } = await import("./actualizacion.ts");
+    const nueva = await avisoNueva();
+    out.push({ ok: nueva ? "aviso" : true, que: "version", detalle: nueva ? `${VERSION}; ${nueva}` : `${VERSION}, la ultima publicada` });
+  }
+
+  if (existsSync(OUTBOX_FILE)) {
+    try {
+      const n = (JSON.parse(readFileSync(OUTBOX_FILE, "utf8")) as { msgs: unknown[] }[]).reduce((a, d) => a + d.msgs.length, 0);
+      if (n) out.push({ ok: "aviso", que: "cola de salida", detalle: `${n} mensaje(s) esperando salir a Slack; el demonio lo reintenta cada minuto` });
+    } catch {}
+  }
 
   if (existsSync(THREADS_DIR)) {
     const viejos = T.all().filter(t => t.state === "closed" && Date.now() - (t.closedAt ?? 0) > 30 * 24 * 3600 * 1000);
