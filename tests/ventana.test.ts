@@ -62,7 +62,10 @@ test("el script de la ventana entra en el repo, lleva la correa y las variables 
   expect(s).toContain("SPOOCHIE_APARTE='w1'");
   expect(s).toContain("SPOOCHIE_APARTE_SESION='aparte-w1-x'");
   expect(s).toContain("--allowedTools");
-  expect(s).not.toMatch(/Edit|Write/);
+  expect(s).toContain("--permission-mode auto");
+  // Lo prohibido va en la lista de denegacion, no en la blanca.
+  expect(s).toMatch(/--disallowedTools '[^']*Edit,Write[^']*git push/);
+  expect(s.split("--allowedTools")[1].split("--disallowedTools")[0]).not.toMatch(/Edit|Write/);
 });
 
 test("la conversacion va a la ventana por su socket; la sesion no ve nada mas; no se abre dos veces; cerrarla cierra el spoochie", async () => {

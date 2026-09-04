@@ -52,7 +52,11 @@ let daemon: ChildProcess;
 afterAll(() => { daemon?.kill(); A.server.close(); B.server.close(); });
 
 test("el aparte solo puede leer, hablar por el tunel y cerrar", () => {
-  const h = herramientasPermitidas("/x/spoochie");
+  const h = herramientasPermitidas("/x/spoochie", false);
+  expect(h.join(" ")).not.toContain("rtk");
+  const conRtk = herramientasPermitidas("/x/spoochie", true);
+  expect(conRtk).toContain("Bash(rtk git diff:*)");
+  expect(conRtk).toContain("Bash(rtk /x/spoochie say:*)");
   expect(h).toContain("Read");
   expect(h).toContain("Bash(/x/spoochie say:*)");
   expect(h).toContain("Bash(git diff:*)");

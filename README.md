@@ -216,6 +216,11 @@ otherwise the one you typed in most recently. If it picked wrong, `spoochie take
 from the right session moves it. Accepting twice, or taking it from the same repo, never
 opens a second window.
 
+- The window runs in Claude Code's `auto` permission mode: the read-only allowlist is
+  approved outright, anything else is judged by Claude Code's own classifier instead of
+  stopping to ask, and Edit, Write, `git push`, `git commit`, `git checkout`, `git reset`
+  and `rm` are denied outright, which no mode can override. `SPOOCHIE_APARTE_PERMISOS=default`
+  in the daemon's environment makes it ask for everything again.
 - On macOS the window is Terminal.app, opened with `open`, which needs no permissions.
   Anywhere a window cannot be opened (Linux without a desktop, `SPOOCHIE_VENTANA=fondo`)
   the side Claude runs headless as `claude -p`, with its output in
@@ -315,9 +320,10 @@ What you should know:
   local transcript under `~/.claude/projects/`. It is the same token that is already in
   the Slack DM the invitation came from. Rotate it when someone leaves.
 - **The side Claude is read-only in practice, not by proof.** Its allowlist is Read,
-  Grep, Glob, read-only git and the spoochie subcommands. `allowedTools` cannot filter
-  arguments, so `git diff --output=<file>` would write a file. It has no Edit, Write or
-  free Bash, and every other command asks the person watching the window.
+  Grep, Glob, read-only git and the spoochie subcommands; Edit, Write and the git
+  commands that change history are denied. `allowedTools` cannot filter arguments, so
+  `git diff --output=<file>` would write a file, and in `auto` mode a Bash command
+  outside the allowlist is decided by Claude Code's classifier, not by a person.
 - **The guardian fails open.** If Haiku is unreachable or times out (20 s), the message
   is delivered unlabelled rather than lost. A held message needs a working guardian.
 - **Slack sees everything**: patches and screenshots travel in the clear through Slack,

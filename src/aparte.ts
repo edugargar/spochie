@@ -33,14 +33,31 @@ export function comandoCli(): string {
   return `${process.execPath} run ${join(HERE, "cli.ts")}`;
 }
 
-/** Lo unico que el Claude aparte puede ejecutar sin preguntar. */
-export function herramientasPermitidas(cli = comandoCli()): string[] {
+/** Lo unico que el Claude aparte puede ejecutar sin preguntar.
+ *  Si la maquina tiene rtk (un proxy que reescribe cada comando a `rtk <cmd>` con un
+ *  hook), los mismos comandos con `rtk` delante tambien: si no, cada git preguntaba. */
+export function herramientasPermitidas(cli = comandoCli(), conRtk = Boolean(Bun.which("rtk"))): string[] {
   // `git branch` a secas admite -D y -f; solo se permite listar. Lo que queda es de
   // lectura en la practica: `git diff --output=<fichero>` podria escribir uno, y el patron
   // de allowedTools no filtra argumentos. Se asume y se dice.
-  const git = ["diff", "log", "show", "status", "branch --list", "blame", "grep", "ls-files"].map(g => `Bash(git ${g}:*)`);
-  const sp = ["say", "patch", "branch", "show", "list", "close"].map(c => `Bash(${cli} ${c}:*)`);
-  return ["Read", "Grep", "Glob", ...git, ...sp];
+  const git = ["diff", "log", "show", "status", "branch --list", "blame", "grep", "ls-files"].map(g => `git ${g}`);
+  const sp = ["say", "patch", "branch", "show", "list", "close"].map(c => `${cli} ${c}`);
+  const cmds = [...git, ...sp];
+  const bash = [...cmds, ...(conRtk ? cmds.map(c => `rtk ${c}`) : [])].map(c => `Bash(${c}:*)`);
+  return ["Read", "Grep", "Glob", ...bash];
+}
+
+/** Lo que el Claude aparte no puede hacer ni aunque el modo de permisos lo dejara:
+ *  las reglas de denegacion mandan sobre cualquier modo. */
+export const HERRAMIENTAS_PROHIBIDAS = ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(rm:*)"];
+
+/** Con que modo de permisos arranca la ventana. "auto" por defecto: lo que no esta en la
+ *  lista blanca lo decide el clasificador de Claude Code en vez de parar a preguntar; la
+ *  primera prueba real dejo la ventana esperando un "ls" mientras la persona estaba en
+ *  una reunion. SPOOCHIE_APARTE_PERMISOS=default vuelve a preguntar por todo. */
+export function modoPermisos(): string {
+  const v = process.env.SPOOCHIE_APARTE_PERMISOS;
+  return v === "default" || v === "auto" ? v : "auto";
 }
 
 /** El primer turno: quien es, que spoochie atiende, lo dicho hasta ahora, y como contestar. */
@@ -119,7 +136,7 @@ export function scriptVentana(t: T.Thread, cwd: string, sessionId: string): stri
     `printf '\\033]0;spoochie ${t.id}\\007'`,
     `echo ${sq(`spoochie ${t.id} · ${t.subject}`)}`,
     `echo ${sq(`Claude aparte: solo lectura + spoochie say. Puedes escribirle aqui. Cerrar la ventana cierra el spoochie.`)}`,
-    `exec ${sq(claude)} --name ${sq(`spoochie-${t.id}`)} --permission-mode default --allowedTools ${sq(herramientasPermitidas().join(","))} --settings ${sq(JSON.stringify({ crossSessionInbound: "accept" }))}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
+    `exec ${sq(claude)} --name ${sq(`spoochie-${t.id}`)} --permission-mode ${modoPermisos()} --allowedTools ${sq(herramientasPermitidas().join(","))} --disallowedTools ${sq(HERRAMIENTAS_PROHIBIDAS.join(","))} --settings ${sq(JSON.stringify({ crossSessionInbound: "accept" }))}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
     ``,
   ].join("\n");
 }
@@ -176,6 +193,7 @@ export function lanzar(t: T.Thread, cwd: string, como: Modo = modo()): Aparte | 
     "--name", `spoochie-${t.id}`,
     "--permission-mode", "default",
     "--allowedTools", herramientasPermitidas().join(","),
+    "--disallowedTools", HERRAMIENTAS_PROHIBIDAS.join(","),
   ], { cwd, env, stdio: ["pipe", out, out] });
   child.on("error", () => {});
   const sess: SessionRecord = { ...base, socket: "(stdin)", token: "", pid: child.pid ?? 0 };
