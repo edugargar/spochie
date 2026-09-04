@@ -1,0 +1,29 @@
+# Slack app manifest for spoochie. Create the app at https://api.slack.com/apps with
+# "From an app manifest" and paste this, or compare it with an existing app's scopes.
+# Only bot scopes; spoochie needs no user token and no Socket Mode.
+display_information:
+  name: spoochie
+  description: A tunnel between two people's Claude Code sessions. Slack notifies and keeps the thread.
+  background_color: "#1F7A6D"
+features:
+  bot_user:
+    display_name: spoochie
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write          # post invitations and replies
+      - im:write            # open the DM with each person (the mailbox)
+      - im:read
+      - im:history          # discover what arrives, read replies in DM threads
+      - mpim:write          # open the group DM bot + both people (the thread)
+      - mpim:read
+      - mpim:history
+      - files:write         # screenshots and patches as files
+      - files:read
+      - users:read          # optional: invite by name
+      - users:read.email    # optional: invite by email
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
