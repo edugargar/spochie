@@ -1,0 +1,13 @@
+#!/bin/sh
+# Antes de empujar: la comprobacion de fugas sobre lo que sale (scripts/fugas.ts).
+# Se activa con:  git config core.hooksPath .githooks
+# La lista de palabras prohibidas vive fuera del repo, en ~/.claude/spoochie/fugas-prohibidas.txt
+# (una linea, separadas por comas). Si no existe, solo corren los patrones genericos.
+set -e
+lista="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/fugas-prohibidas.txt"
+[ -r "$lista" ] && FUGAS_PROHIBIDAS="$(cat "$lista")" && export FUGAS_PROHIBIDAS
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  if git cat-file -e "$remote_sha" 2>/dev/null; then desde="$remote_sha"; else desde=""; fi
+  bun scripts/fugas.ts ${desde:+--desde "$desde"}
+done

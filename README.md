@@ -73,7 +73,7 @@ the first session start fetches a self-contained binary from this repo's release
 The inviter runs:
 
 ```
-spoochie invite --to alex@example.com          # or --to U01234567 --name Alex
+spoochie invite --to sam@example.com          # or --to U01234567 --name Sam
 ```
 
 The bot sends the newcomer a DM with everything inside: the two plugin commands, the
@@ -548,6 +548,13 @@ so a daemon restart mid-conversation loses nothing, and failed publishes retry e
 The CLI speaks Spanish; that's where it was born. Manual install without the plugin:
 `hooks/session-start.sh` and `hooks/session-end.sh` do the same as `hooks/hooks.json`,
 for wiring from your `~/.claude/settings.json`.
+
+## Contributing and security
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the pull-request flow (`main` is
+protected, checks are required for everyone), the version policy and how a release is
+cut. [SECURITY.md](SECURITY.md) says how to report a vulnerability and what CI checks on
+every push, including the leak check in `scripts/fugas.ts`.
 
 ---
 

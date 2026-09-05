@@ -6,7 +6,7 @@ import type { Thread, Msg } from "../src/threads.ts";
 const t: Thread = {
   id: "a3f1", subject: "el modal se cierra al pulsar Guardar",
   from: { sessionId: "A", name: "a", cwd: "/a", human: "Edu", slackUser: "U_EDU" },
-  to: { sessionId: "B", name: "b", cwd: "/b", human: "Alex", slackUser: "U_ALEX" },
+  to: { sessionId: "B", name: "b", cwd: "/b", human: "Sam", slackUser: "U_SAM" },
   state: "open", createdAt: 0, lastActivityAt: 0,
   context: { branch: "feat/perfil", sha: "cafe12345678", files: ["src/Modal.tsx"] },
   messages: [{ at: 0, from: "A", author: "claude", kind: "text", text: "se cierra antes del POST" }],
@@ -26,7 +26,7 @@ test("un mensaje escrito a mano en Slack no tiene sobre", () => {
 
 test("la invitacion menciona a quien recibe y dice como aceptar", () => {
   const b = flat(inviteBlocks(t));
-  expect(b).toContain("<@U_ALEX>");
+  expect(b).toContain("<@U_SAM>");
   expect(b).toContain("spoochie accept a3f1");
   expect(b).toContain("Spoochie de Edu");
   expect(b).toContain("feat/perfil");
@@ -60,8 +60,8 @@ test("un parche va en bloque de codigo y avisa de que no lo aplica nadie por ti"
 });
 
 test("los avisos del sistema no arrastran el texto interno a Slack", () => {
-  const acc = noticeBlocks({ ...t, acceptedBy: "Alex" }, '[spoochie a3f1] b ha aceptado el tunel.\nYa podeis hablar: spoochie say a3f1 "<texto>"');
-  expect(acc.text).toContain("Alex");
+  const acc = noticeBlocks({ ...t, acceptedBy: "Sam" }, '[spoochie a3f1] b ha aceptado el tunel.\nYa podeis hablar: spoochie say a3f1 "<texto>"');
+  expect(acc.text).toContain("Sam");
   expect(acc.text).not.toContain("spoochie say");
   expect(acc.text).not.toContain("<texto>");
   const cl = noticeBlocks({ ...t, closeReason: "resuelto" }, "[spoochie a3f1 | s] cerrado (resuelto).");
@@ -197,7 +197,7 @@ function puenteAbrir(fallaGrupo = false) {
     if (method === "conversations.open") {
       const users = String(body.users);
       if (users.includes(",")) { if (fallaGrupo) throw new Error("slack conversations.open: missing_scope"); return { channel: { id: "G_GRUPO" } }; }
-      return { channel: { id: "D_ALEX" } };
+      return { channel: { id: "D_SAM" } };
     }
     if (method === "chat.postMessage") return { ts: body.channel === "G_GRUPO" ? "200.000" : "201.000" };
     if (method === "chat.getPermalink") return { permalink: "https://x.slack.com/archives/G_GRUPO/p200000" };
@@ -212,12 +212,12 @@ test("el hilo de un spoochie que abro va a un grupo que vemos los dos, y el DM d
   const { b, llamadas } = puenteAbrir();
   const r = await b.openThread(t);
   // Y se guarda donde quedo el aviso del DM, para poder borrarlo al cerrar.
-  expect(r).toEqual({ channel: "G_GRUPO", ts: "200.000", aviso: { channel: "D_ALEX", ts: "201.000" } });
+  expect(r).toEqual({ channel: "G_GRUPO", ts: "200.000", aviso: { channel: "D_SAM", ts: "201.000" } });
   const abiertos = llamadas.filter(l => l.method === "conversations.open").map(l => l.body.users);
-  expect(abiertos).toContain("U_ALEX");
-  expect(abiertos).toContain("U_EDU,U_ALEX");
+  expect(abiertos).toContain("U_SAM");
+  expect(abiertos).toContain("U_EDU,U_SAM");
   const posts = llamadas.filter(l => l.method === "chat.postMessage");
-  expect(posts.map(p => p.body.channel)).toEqual(["G_GRUPO", "D_ALEX"]);
+  expect(posts.map(p => p.body.channel)).toEqual(["G_GRUPO", "D_SAM"]);
   // El aviso del DM lleva el sobre completo y donde esta el hilo; el del grupo, no.
   expect(posts[0].body.metadata.event_payload.thread).toBeUndefined();
   expect(posts[1].body.metadata.event_payload.thread).toEqual({ channel: "G_GRUPO", ts: "200.000" });
@@ -232,7 +232,7 @@ test("sin permisos para grupos, el hilo se queda en el DM del receptor, como ant
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "grupo" } } as any);
   const { b, llamadas } = puenteAbrir(true);
   const r = await b.openThread(t);
-  expect(r).toEqual({ channel: "D_ALEX", ts: "201.000" });
+  expect(r).toEqual({ channel: "D_SAM", ts: "201.000" });
   expect(llamadas.filter(l => l.method === "chat.postMessage").length).toBe(1);
 });
 
@@ -242,7 +242,7 @@ test("con --hilos canal, el hilo va al canal y el aviso al DM", async () => {
   const { b, llamadas } = puenteAbrir();
   const r = await b.openThread(t);
   expect(r.channel).toBe("C_SPOOCHIE");
-  expect(llamadas.filter(l => l.method === "chat.postMessage").map(l => l.body.channel)).toEqual(["C_SPOOCHIE", "D_ALEX"]);
+  expect(llamadas.filter(l => l.method === "chat.postMessage").map(l => l.body.channel)).toEqual(["C_SPOOCHIE", "D_SAM"]);
   Cfg.save({ guardian: false, transcript: false } as any);
 });
 
@@ -257,7 +257,7 @@ test("el cierre viaja con su propio tipo y el otro lado cierra al leerlo", async
   // Del otro lado: el sobre "close" llama a onCierre con el motivo, y no se entrega como turno.
   const entregados: any[] = [];
   const cerrados: string[] = [];
-  const r: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_ALEX", async (_t: any, m: any) => { entregados.push(m); }, async () => {}, async () => {});
+  const r: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_SAM", async (_t: any, m: any) => { entregados.push(m); }, async () => {}, async () => {});
   r.onCierre = async (_t: any, motivo: string) => { cerrados.push(motivo); };
   r.get = async () => ({ messages: [
     { ts: "0.1", user: "UBOT", text: "raiz" },
@@ -277,11 +277,11 @@ test("borrarHilo borra lo del bot (mensajes, ficheros, raiz y aviso) y deja lo q
   b.get = async () => ({ messages: [
     { ts: "0.1", user: "UBOT", bot_id: "B1", text: "raiz" },
     { ts: "0.2", user: "UBOT", bot_id: "B1", text: "del bot", files: [{ id: "F1" }] },
-    { ts: "0.3", user: "U_ALEX", text: "escrito a mano" },
+    { ts: "0.3", user: "U_SAM", text: "escrito a mano" },
     { ts: "0.4", bot_id: "B1", text: "del bot otra vez" },
   ] });
   b.call = async (method: string, body: any) => { borrados.push(`${method}:${body.ts ?? body.file}`); return {}; };
-  const n = await b.borrarHilo({ ...t, slack: { channel: "G1", ts: "0.1", aviso: { channel: "D_ALEX", ts: "9.9" } } });
+  const n = await b.borrarHilo({ ...t, slack: { channel: "G1", ts: "0.1", aviso: { channel: "D_SAM", ts: "9.9" } } });
   expect(borrados).toEqual(["files.delete:F1", "chat.delete:0.2", "chat.delete:0.4", "chat.delete:0.1", "chat.delete:9.9"]);
   expect(n).toBe(4);
 });
@@ -290,7 +290,7 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "conversations.open") return { channel: { id: "D_X" } }; if (method === "chat.postMessage") posts.push(body); return {}; };
-  await b.hola("U_ALEX", "a".repeat(64), ["wss://x"], "Edu");
+  await b.hola("U_SAM", "a".repeat(64), ["wss://x"], "Edu");
   expect(posts[0].channel).toBe("D_X");
   expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
 
@@ -298,10 +298,10 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   b.onHola = async (de: string, nombre: string, np: string, r: string[]) => { recibidos.push({ de, nombre, np, r }); };
   b.inbox = async () => "D_ME";
   b.get = async () => ({ messages: [
-    { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_ALEX", fromName: "Alex", np: "b".repeat(64), r: ["wss://alex"] } } },
-    { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_ALEX", fromName: "Alex", np: "b".repeat(64), r: ["wss://alex"] } } },
+    { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_SAM", fromName: "Sam", np: "b".repeat(64), r: ["wss://sam"] } } },
+    { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_SAM", fromName: "Sam", np: "b".repeat(64), r: ["wss://sam"] } } },
   ] });
   b.inboxCursor = "0";
   await b.discover();
-  expect(recibidos).toEqual([{ de: "U_ALEX", nombre: "Alex", np: "b".repeat(64), r: ["wss://alex"] }]);
+  expect(recibidos).toEqual([{ de: "U_SAM", nombre: "Sam", np: "b".repeat(64), r: ["wss://sam"] }]);
 });

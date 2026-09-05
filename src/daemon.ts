@@ -227,7 +227,7 @@ async function handle(req: Req): Promise<any> {
       const cfg = Cfg.load();
       const now = Date.now();
 
-      // Destino remoto: "@alex" va por Slack. Destino local: por nombre de sesion.
+      // Destino remoto: "@sam" va por Slack. Destino local: por nombre de sesion.
       const remote = typeof req.to === "string" && req.to.startsWith("@");
       let to: T.Side;
       let porNostr: { pk: string; relays: string[] } | null = null;
@@ -543,7 +543,7 @@ const dialogos = new Map<string, import("node:child_process").ChildProcess>();
 async function assign(t: T.Thread): Promise<string | null> {
   if (t.state !== "pending" || !T.esRemoto(t.to.sessionId)) return null;
   // Quien abrio el tunel no es el destinatario: si se lo repartiera a si mismo,
-  // se pisaria el nombre del otro lado y el transcript diria "Alex y Alex".
+  // se pisaria el nombre del otro lado y el transcript diria "Sam y Sam".
   const yo = Cfg.load().slack?.userId;
   if (yo && t.from.slackUser === yo) return null;
   const { pick, otras } = elegir(t);

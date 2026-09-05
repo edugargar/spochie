@@ -21,14 +21,14 @@ test("lo que Slack toca por el camino no rompe la firma", () => {
 
 test("la primera clave de un id se fija, y otra distinta despues se rechaza", () => {
   Cfg.save({ guardian: false, transcript: false });
-  const env = { id: "t1", kind: "msg", from: "U_ALEX", fromName: "Alex", pk: k.pub, sig: firmar(k.priv, "t1", "msg", "U_ALEX", "x") };
+  const env = { id: "t1", kind: "msg", from: "U_SAM", fromName: "Sam", pk: k.pub, sig: firmar(k.priv, "t1", "msg", "U_SAM", "x") };
   expect(verificarSobre(env, "x")).toBe("nueva");
-  expect(Cfg.contactById(Cfg.load(), "U_ALEX")?.pk).toBe(k.pub);
+  expect(Cfg.contactById(Cfg.load(), "U_SAM")?.pk).toBe(k.pub);
   expect(verificarSobre(env, "x")).toBe("ok");
   const otra = nuevasClaves();
-  const impostor = { ...env, pk: otra.pub, sig: firmar(otra.priv, "t1", "msg", "U_ALEX", "x") };
+  const impostor = { ...env, pk: otra.pub, sig: firmar(otra.priv, "t1", "msg", "U_SAM", "x") };
   expect(verificarSobre(impostor, "x")).toBe("mala");
-  expect(Cfg.contactById(Cfg.load(), "U_ALEX")?.pk).toBe(k.pub);
+  expect(Cfg.contactById(Cfg.load(), "U_SAM")?.pk).toBe(k.pub);
 });
 
 test("un sobre sin firma se marca, no se descarta", () => {

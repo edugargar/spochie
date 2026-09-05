@@ -5,7 +5,7 @@ import type { Thread } from "../src/threads.ts";
 const base: Thread = {
   id: "t1", subject: "asunto",
   from: { sessionId: "A", name: "a", cwd: "/a", human: "Edu" },
-  to: { sessionId: "B", name: "b", cwd: "/b", human: "Alex" },
+  to: { sessionId: "B", name: "b", cwd: "/b", human: "Sam" },
   state: "open", createdAt: 0, lastActivityAt: 0, context: {}, messages: [],
 };
 

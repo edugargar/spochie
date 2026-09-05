@@ -38,10 +38,10 @@ import { crearInvitacion, textoInvitacion } from "../src/alta.ts";
 import * as Cfg from "../src/config.ts";
 
 test("la invitacion dirigida lleva para quien es y quien invita, y sobrevive al pegado", () => {
-  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40), t: "Equipo", u: "U0ALEX01", n: "Alex", i: { id: "U0EDU001", name: "Edu" } });
+  const blob = crearInvitacion({ b: "xoxb-" + "z".repeat(40), t: "Equipo", u: "U0SAM001", n: "Sam", i: { id: "U0EDU001", name: "Edu" } });
   const leida = leerInvitacion(limpiarCadena(textoInvitacion(blob, "Edu"))!);
-  expect(leida?.u).toBe("U0ALEX01");
-  expect(leida?.n).toBe("Alex");
+  expect(leida?.u).toBe("U0SAM001");
+  expect(leida?.n).toBe("Sam");
   expect(leida?.i).toEqual({ id: "U0EDU001", name: "Edu" });
 });
 
@@ -63,5 +63,5 @@ test("la agenda resuelve @nombre sin distinguir mayusculas ni espacios", () => {
   Cfg.addContact(c, { id: "U0EDU001", name: "Edu Garcia" });
   expect(Cfg.contact(c, "edugarcia")?.id).toBe("U0EDU001");
   expect(Cfg.contact(c, "EduGarcia")?.id).toBe("U0EDU001");
-  expect(Cfg.contact(c, "alex")).toBeNull();
+  expect(Cfg.contact(c, "sam")).toBeNull();
 });

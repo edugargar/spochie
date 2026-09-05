@@ -10,8 +10,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: latest }
       # Hasta 0.8 no habia dependencias y bun test corria sin node_modules; nostr-tools
       # llego con 0.9 y el demonio moria al importar, asi que todos los tests con demonio
@@ -25,7 +25,7 @@ jobs:
             bun build --compile --target=bun-$t src/cli.ts --outfile dist/spoochie-$t
           done
           (cd dist && sha256sum spoochie-* > SHA256SUMS && cat SHA256SUMS)
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             dist/spoochie-*

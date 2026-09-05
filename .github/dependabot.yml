@@ -1,0 +1,11 @@
+# Weekly update PRs for the pinned GitHub Actions and for nostr-tools. Actions are
+# pinned by commit SHA in the workflows; Dependabot keeps the SHA and the version
+# comment in step.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: bun
+    directory: /
+    schedule: { interval: weekly }
