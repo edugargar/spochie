@@ -67,6 +67,10 @@ export type Thread = {
   slack?: { channel: string; ts: string; aviso?: { channel: string; ts: string } };
   /** Cuando se borro la conversacion (al cerrar). Quedan los datos del sobre, no los mensajes. */
   borrado?: number;
+  /** Por donde viaja con la otra maquina. Sin esto, Slack (hilos de antes de 0.9). */
+  transporte?: "slack" | "nostr";
+  /** Nostr: la clave del otro lado, sus reles, y lo que este lado envio (para borrarlo). */
+  nostr?: { otro: string; relays: string[]; enviados: { id: string; wsk: string }[] };
   /** Hasta donde se ha leido el hilo de Slack. Va en disco a proposito: en memoria,
    *  reiniciar el demonio volvia a leer el hilo entero y reinyectaba en la sesion
    *  cada mensaje que ya se habia entregado. */
@@ -351,3 +355,6 @@ export function purgar(t: Thread, extras: { spool?: string; transcript?: string 
   }
   return t;
 }
+
+/** Un lado que vive en otra maquina, sea por Slack o por Nostr. */
+export const esRemoto = (sessionId: string) => sessionId.startsWith("slack:") || sessionId.startsWith("nostr:");

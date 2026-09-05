@@ -23,7 +23,12 @@ export type Config = {
   borrarAlCerrar?: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
-  contacts?: Record<string, { id: string; name: string; pk?: string }>;
+  contacts?: Record<string, { id: string; name: string; pk?: string; npub?: string; relays?: string[] }>;
+  /** Claves Nostr (secp256k1, hex) y reles de esta persona. Nacen en el alta. */
+  nostr?: { sk?: string; pk?: string; relays?: string[] };
+  /** Por donde van los spoochies con quien tiene clave Nostr: "nostr" (por defecto si
+   *  los dos la tienen) o "slack". Slack sigue avisando por DM en los dos casos. */
+  transporte?: "nostr" | "slack";
   /** Clave ed25519 con la que se firman los sobres. Nace en el alta. */
   keys?: { pub: string; priv: string };
   slack?: {
@@ -88,7 +93,11 @@ export function slackBotToken(c: Config): string | null {
 
 /** Guarda un contacto por su nombre en minusculas y sin espacios, que es como se
  *  escribe despues de la arroba. */
-export function addContact(c: Config, p: { id: string; name: string; pk?: string }) {
+export function contactoPorNpub(c: Config, pk: string): { id: string; name: string; pk?: string; npub?: string; relays?: string[] } | null {
+  return Object.values(c.contacts ?? {}).find(x => x.npub === pk) ?? null;
+}
+
+export function addContact(c: Config, p: { id: string; name: string; pk?: string; npub?: string; relays?: string[] }) {
   // Si ya estaba por otro nombre (o con clave), se conserva lo que ya se sabia.
   const previo = contactById(c, p.id);
   if (previo) {
@@ -99,7 +108,7 @@ export function addContact(c: Config, p: { id: string; name: string; pk?: string
   let clave = claveContacto(p.name);
   const ocupada = c.contacts?.[clave];
   if (ocupada && ocupada.id !== p.id) clave = `${clave}-${p.id.slice(-4).toLowerCase()}`;
-  c.contacts = { ...(c.contacts ?? {}), [clave]: { ...previo, ...p, pk: p.pk ?? previo?.pk } };
+  c.contacts = { ...(c.contacts ?? {}), [clave]: { ...previo, ...p, pk: p.pk ?? previo?.pk, npub: p.npub ?? previo?.npub, relays: p.relays ?? previo?.relays } };
 }
 
 export function contactById(c: Config, id: string): { id: string; name: string; pk?: string } | null {
