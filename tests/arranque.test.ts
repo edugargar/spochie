@@ -26,3 +26,16 @@ test("el estado de ~/.claude/spochie se muda a spoochie una vez, y no pisa lo qu
   expect(migrarEstado(viejo, nuevo)).toBe(false);
   expect(readFileSync(join(nuevo, "config.json"), "utf8")).toContain("Edu");
 });
+
+test("el latido lleva la version del demonio, y doctor la compara con la del plugin", async () => {
+  const { latir, versionLatido, LATIDO } = await import("../src/arranque.ts");
+  const { readFileSync } = await import("node:fs");
+  latir("0.7.1");
+  expect(versionLatido()).toBe("0.7.1");
+  latir("0.9.1");
+  expect(readFileSync(LATIDO, "utf8")).toBe("0.9.1");
+  // Un latido de un demonio anterior a 0.9.1 esta vacio: doctor no puede saber su version.
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(LATIDO, "");
+  expect(versionLatido()).toBeNull();
+});

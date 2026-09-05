@@ -139,6 +139,14 @@ export async function revisar(): Promise<Chequeo[]> {
     const { avisoNueva } = await import("./actualizacion.ts");
     const nueva = await avisoNueva();
     out.push({ ok: nueva ? "aviso" : true, que: "version", detalle: nueva ? `${VERSION}; ${nueva}` : `${VERSION}, la ultima publicada` });
+    const { versionLatido, edadLatido } = await import("./arranque.ts");
+    const late = versionLatido();
+    const vivo = (edadLatido() ?? Infinity) < 90;
+    if (vivo && late !== VERSION) out.push({
+      ok: "aviso",
+      que: "version del demonio",
+      detalle: `${late ?? "anterior a 0.9.1"}, y este spoochie es ${VERSION}: el demonio arranco antes de actualizar. Reinicia Claude Code y el hook lo cambia`,
+    });
   }
 
   if (existsSync(OUTBOX_FILE)) {

@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROOT, DAEMON_LOG, DAEMON_LOCK, ensureDirs } from "./paths.ts";
+import { VERSION } from "./version.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -31,12 +32,22 @@ export function comandoDemonio(): string[] {
   return [bun, "run", join(HERE, "daemon.ts")];
 }
 
-export function latir() {
+/**
+ * El latido lleva la version del demonio que late. `doctor` corre con el codigo del
+ * plugin recien actualizado, pero el demonio bajo launchd sigue siendo el que arranco
+ * antes de actualizar: sin esto, doctor decia "0.9.0" con un demonio 0.7.1 corriendo.
+ */
+export function latir(version: string = VERSION) {
   try {
-    if (!existsSync(LATIDO)) writeFileSync(LATIDO, "", { mode: 0o600 });
+    if (!existsSync(LATIDO) || readFileSync(LATIDO, "utf8") !== version) writeFileSync(LATIDO, version, { mode: 0o600 });
     const now = new Date();
     utimesSync(LATIDO, now, now);
   } catch {}
+}
+
+/** Version del demonio que late, o null si no late o es anterior a 0.9.1 (latido vacio). */
+export function versionLatido(): string | null {
+  try { return readFileSync(LATIDO, "utf8").trim() || null; } catch { return null; }
 }
 
 /** Segundos desde el ultimo latido, o null si nunca lo hubo. */

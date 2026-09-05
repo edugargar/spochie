@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1 (2026-09-05)
+
+- The heartbeat carries the daemon's version and `doctor` warns when the running daemon is older than the plugin (it happened: doctor said 0.9.0 with a 0.7.1 daemon under launchd).
+
 ## 0.9.0 (2026-09-05)
 
 - Conversations between machines travel over Nostr by default: NIP-17 private messages (NIP-44 encryption, NIP-59 gift wrap) through public relays, no server of ours, keys in your config. Only contacts with a known key can reach you.
