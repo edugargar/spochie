@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2 (2026-09-05)
+
+- Files travel over Nostr: 20 KB encrypted chunks, reassembled in the receiver's spool and announced with the local path, as over Slack. Chunks arriving before the invitation wait for it.
+
 ## 0.9.1 (2026-09-05)
 
 - The heartbeat carries the daemon's version and `doctor` warns when the running daemon is older than the plugin (it happened: doctor said 0.9.0 with a 0.7.1 daemon under launchd).

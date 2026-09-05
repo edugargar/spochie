@@ -18,14 +18,15 @@
  * Los reles son los que cada persona elija; por defecto tres publicos y gratuitos.
  * Se escribe en los del receptor y en los mios, y se lee de los mios.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, rmdirSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, nip19, nip44, type Event, type EventTemplate } from "nostr-tools";
 import { SimplePool } from "nostr-tools/pool";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
 import { ROOT, ensureDirs } from "./paths.ts";
+import { MAX_BYTES, SPOOL } from "./files.ts";
 import { VERSION } from "./version.ts";
 
 export const RELAYS_POR_DEFECTO = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
@@ -54,7 +55,7 @@ export const misReles = (c: Cfg.Config) => c.nostr?.relays?.length ? c.nostr.rel
 export type Sobre = {
   v: 1;
   id: string;
-  kind: "invite" | "msg" | "accept" | "close" | "notice" | "hola";
+  kind: "invite" | "msg" | "accept" | "close" | "notice" | "hola" | "file";
   app?: string;
   subject?: string;
   fromName?: string;
@@ -63,7 +64,21 @@ export type Sobre = {
   /** En el hola del alta: mi nombre, mi id de Slack si lo hay, y mis reles. */
   slack?: string;
   relays?: string[];
+  /** Un trozo de fichero: cual, que trozo de cuantos, y como se llama. */
+  file?: { fid: string; n: number; total: number; name: string; size: number };
 };
+
+/**
+ * Los ficheros (capturas) van en trozos, cada trozo un sobre. El tope lo pone NIP-44:
+ * 65535 bytes de texto en claro por capa, y hay dos capas (sello dentro de envoltura).
+ * 20 KB crudos son 27 KB en base64, ~38 KB de sello y ~55 KB de envoltura: cabe en
+ * nos.lol (128 KB por mensaje) con margen. Una captura de 500 KB son 25 sobres.
+ */
+export const TROZO = 20 * 1024;
+const FID_VALIDO = /^[A-Za-z0-9_-]{1,32}$/;
+const nombreSeguro = (n: string) => n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "fichero";
+const PARTES = ".partes";
+const LISTOS = ".listos.json";
 
 const ahora = () => Math.floor(Date.now() / 1000);
 const fechaFalsa = () => ahora() - Math.floor(Math.random() * DOS_DIAS_S);
@@ -203,6 +218,7 @@ export class NostrBridge {
     }
     if (!contacto) { this.cb.log("nostr", "sobre de una clave que no esta en la agenda; ignorado", a.de.slice(0, 12)); return; }
     if (a.sobre.kind === "invite") { await this.materializar(a, contacto); return; }
+    if (a.sobre.kind === "file") { await this.trozo(a); return; }
     const t = T.load(a.sobre.id);
     if (!t || t.transporte !== "nostr" || t.nostr?.otro !== a.de) return;
     if (a.sobre.kind === "accept") { await this.cb.onRemoteAccept(t, "en la otra maquina"); return; }
@@ -228,6 +244,66 @@ export class NostrBridge {
     };
     T.save(t);
     await this.cb.onMessage(t, { at: now, from: t.from.sessionId, author: "claude", kind: "text", text: a.texto || "(el mensaje de apertura llego vacio)", firma: "ok" });
+    await this.entregarListos(t);
+  }
+
+  /**
+   * Un trozo de fichero. Se guarda en el spool del hilo; con el ultimo se recompone el
+   * fichero y se anuncia con su ruta local, como hace el puente de Slack. Los reles no
+   * garantizan el orden: los trozos pueden llegar antes que la invitacion, y entonces
+   * el fichero espera en el spool hasta que el hilo exista.
+   */
+  private async trozo(a: Abierto) {
+    const f = a.sobre.file;
+    if (!f || !FID_VALIDO.test(String(f.fid)) || !Number.isInteger(f.n) || !Number.isInteger(f.total) || f.n < 0 || f.n >= f.total) return;
+    if (f.total > Math.ceil(MAX_BYTES / TROZO) || !(f.size >= 0 && f.size <= MAX_BYTES)) { this.cb.log("nostr", "fichero demasiado grande; ignorado", f.name); return; }
+    const t = T.load(a.sobre.id);
+    if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.de)) return;
+    if (!t && T.yaVisto(a.sobre.id)) return;
+    const dir = join(SPOOL, a.sobre.id, PARTES, f.fid);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(dir, String(f.n)), Buffer.from(a.texto, "base64"), { mode: 0o600 });
+    const tengo = readdirSync(dir).filter(x => /^\d+$/.test(x)).length;
+    if (tengo < f.total) return;
+    const partes: Buffer[] = [];
+    for (let i = 0; i < f.total; i++) partes.push(readFileSync(join(dir, String(i))));
+    const bytes = Buffer.concat(partes);
+    rmSync(dir, { recursive: true, force: true });
+    try { rmdirSync(join(SPOOL, a.sobre.id, PARTES)); } catch {}
+    if (bytes.length !== f.size) { this.cb.log("nostr", "fichero recompuesto con otro tamano; descartado", f.name); return; }
+    const destino = join(SPOOL, a.sobre.id, `${f.fid}-${nombreSeguro(f.name)}`);
+    writeFileSync(destino, bytes, { mode: 0o600 });
+    const listos = join(SPOOL, a.sobre.id, LISTOS);
+    const cola: string[] = existsSync(listos) ? JSON.parse(readFileSync(listos, "utf8")) : [];
+    writeFileSync(listos, JSON.stringify([...cola, destino]), { mode: 0o600 });
+    if (t) await this.entregarListos(t);
+  }
+
+  private async entregarListos(t: T.Thread) {
+    const listos = join(SPOOL, t.id, LISTOS);
+    if (!existsSync(listos)) return;
+    const rutas: string[] = JSON.parse(readFileSync(listos, "utf8"));
+    rmSync(listos, { force: true });
+    if (!rutas.length) return;
+    await this.cb.onMessage(t, {
+      at: Date.now(), from: t.from.sessionId === `nostr:${t.nostr?.otro}` ? t.from.sessionId : t.to.sessionId, author: "claude", kind: "text",
+      text: `Te dejo ${rutas.length === 1 ? "un fichero" : `${rutas.length} ficheros`} por el tunel. Ya estan en esta maquina, abrelos si quieres.`,
+      files: rutas, firma: "ok",
+    });
+  }
+
+  /** Manda los ficheros de un turno, a trozos. Los que no caben o no existen se saltan. */
+  private async enviarFicheros(t: T.Thread, rutas: string[] | undefined): Promise<void> {
+    for (const ruta of rutas ?? []) {
+      let bytes: Buffer;
+      try { if (statSync(ruta).size > MAX_BYTES) { this.cb.log("nostr", "fichero de mas de 10 MB; no se manda", ruta); continue; } bytes = readFileSync(ruta); } catch { continue; }
+      const fid = Math.random().toString(36).slice(2, 10);
+      const total = Math.max(1, Math.ceil(bytes.length / TROZO));
+      for (let n = 0; n < total; n++) {
+        const ok = await this.enviar(t, { v: 1, id: t.id, kind: "file", file: { fid, n, total, name: basename(ruta), size: bytes.length } }, bytes.subarray(n * TROZO, (n + 1) * TROZO).toString("base64"));
+        if (!ok) { this.cb.log("nostr", "fichero a medias, un trozo no se publico", ruta); break; }
+      }
+    }
   }
 
   private async enviar(t: T.Thread, sobre: Sobre, texto: string): Promise<boolean> {
@@ -247,13 +323,17 @@ export class NostrBridge {
   async openThread(t: T.Thread, otroPk: string, relays: string[]): Promise<boolean> {
     t.transporte = "nostr";
     t.nostr = { otro: otroPk, relays: relays.length ? relays : RELAYS_POR_DEFECTO, enviados: [] };
-    return this.enviar(t, { v: 1, id: t.id, kind: "invite", subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context, relays: this.relays }, t.messages[0]?.text ?? "");
+    const ok = await this.enviar(t, { v: 1, id: t.id, kind: "invite", subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context, relays: this.relays }, t.messages[0]?.text ?? "");
+    if (ok) await this.enviarFicheros(T.load(t.id) ?? t, t.messages[0]?.files);
+    return ok;
   }
 
   async post(t: T.Thread, notice: string, m?: T.Msg): Promise<boolean> {
     const kind: Sobre["kind"] = m ? "msg" : notice.includes("ha aceptado el tunel") ? "accept" : notice.includes("cerrado (") ? "close" : "notice";
     const texto = m ? m.text : kind === "close" ? (t.closeReason ?? "cerrado") : notice;
-    return this.enviar(t, { v: 1, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, texto);
+    // Los ficheros van antes que el texto, para que el otro lado los tenga al leerlo.
+    if (m?.files?.length) await this.enviarFicheros(t, m.files);
+    return this.enviar(T.load(t.id) ?? t, { v: 1, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, texto);
   }
 
   async aviso(t: T.Thread, texto: string) { await this.enviar(t, { v: 1, id: t.id, kind: "notice", subject: t.subject }, texto); }

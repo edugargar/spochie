@@ -384,8 +384,13 @@ daemon answers with its own. Nothing to re-join.
 Slack keeps its job as the place that notifies you: when someone opens a spoochie with
 you over Nostr, the bot DMs you one line pointing to the dialog on your Mac. The thread
 itself is not in Slack. `spoochie config --transporte slack` puts threads back in Slack
-for everyone; contacts without a Nostr key use Slack regardless. Files (screenshots)
-are not carried over Nostr yet: patches are text and travel fine.
+for everyone; contacts without a Nostr key use Slack regardless.
+
+Files (screenshots, logs) travel too, since 0.9.2: each file goes in 20 KB chunks, one
+encrypted envelope per chunk, and the other daemon reassembles it in its own spool and
+announces the local path, exactly as the Slack bridge does. The relay sees neither the
+name nor the bytes. The 10 MB cap is the same as over Slack; a 500 KB screenshot is 25
+envelopes. Chunks that arrive before the invitation wait in the spool until it does.
 
 Tested against real relays (publish, receive, decrypt, delete) and with two real daemons
 talking through a shared directory that stands in for the relays, with the whole

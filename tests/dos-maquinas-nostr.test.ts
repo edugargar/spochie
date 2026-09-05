@@ -77,6 +77,20 @@ test("dos maquinas por Nostr: abrir, aceptar, contestar, cerrar, y solo queda el
   expect(["publicado", "encolado", true]).toContain(say.delivered);
   expect(await hasta(() => A.got.some(x => x.includes("min-width del contenedor")))).toBe(true);
 
+  // Bea adjunta una captura de 45 KB: va en tres sobres y Ana la tiene en su spool, byte a byte.
+  const captura = join(HOME_B, "pantalla.png");
+  const bytes = Buffer.alloc(45 * 1024);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) & 0xff;
+  writeFileSync(captura, bytes);
+  const conFichero = await rpc(HOME_B, { op: "say", sessionId: "U_B", id: open.id, text: "asi se ve", files: [captura] });
+  expect(["publicado", "encolado", true]).toContain(conFichero.delivered);
+  expect(await hasta(() => A.got.some(x => x.includes("Te dejo un fichero")))).toBe(true);
+  const rutaEnA = A.got.find(x => x.includes("Te dejo un fichero"))!.match(new RegExp(`${HOME_A}\\S*pantalla\\.png`))?.[0];
+  expect(rutaEnA).toBeDefined();
+  expect(readFileSync(rutaEnA!).equals(bytes)).toBe(true);
+  const { readdirSync: ls } = await import("node:fs");
+  expect(ls(NOSTR).length).toBeGreaterThanOrEqual(6);
+
   // Ana cierra: Bea se entera, y en las dos maquinas solo queda el sobre.
   await rpc(HOME_A, { op: "close", sessionId: "U_A", id: open.id, reason: "resuelto" });
   expect(await hasta(() => hilo(HOME_B, open.id)?.state === "closed")).toBe(true);
@@ -87,5 +101,7 @@ test("dos maquinas por Nostr: abrir, aceptar, contestar, cerrar, y solo queda el
   expect(JSON.stringify(hilo(HOME_B, open.id))).not.toContain("min-width");
   // Y el directorio de "reles" no tiene el texto en claro por ningun sitio.
   const { readdirSync } = await import("node:fs");
-  for (const f of readdirSync(NOSTR)) expect(readFileSync(join(NOSTR, f), "utf8")).not.toContain("min-width");
+  for (const f of readdirSync(NOSTR)) { const s = readFileSync(join(NOSTR, f), "utf8"); expect(s).not.toContain("min-width"); expect(s).not.toContain("pantalla"); }
+  // La captura se fue con el spoochie: el spool de Ana ya no la tiene.
+  expect(existsSync(join(HOME_A, "files", open.id))).toBe(false);
 }, 40_000);
