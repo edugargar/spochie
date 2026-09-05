@@ -42,9 +42,14 @@ screenshots. Until then, only fixes go in.
 
 ```sh
 bun scripts/version.ts X.Y.Z "One line for the CHANGELOG"
-# edit CHANGELOG.md if the line needs company, then:
-git commit -am "X.Y.Z: ..." && git tag vX.Y.Z && git push origin main vX.Y.Z
+# edit CHANGELOG.md if the line needs company; commit on a branch, open the PR, merge it.
+git checkout main && git pull --ff-only
+git tag vX.Y.Z && git push origin vX.Y.Z
 ```
+
+The version bump goes through a pull request like everything else; the tag is created
+on the merged commit and pushed on its own. Creating a `v*` tag is allowed; moving or
+deleting one is not.
 
 The tag triggers the release workflow: it builds four binaries with `bun build
 --compile`, writes `SHA256SUMS`, and attaches them to the GitHub release. The session
