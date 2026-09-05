@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { THREADS_DIR, ensureDirs } from "./paths.ts";
@@ -64,7 +64,9 @@ export type Thread = {
   /** Ya se aviso de que se acerca el cierre por silencio. */
   avisado?: boolean;
   /** Hilo de Slack, cuando el spoochie cruza de maquina. */
-  slack?: { channel: string; ts: string };
+  slack?: { channel: string; ts: string; aviso?: { channel: string; ts: string } };
+  /** Cuando se borro la conversacion (al cerrar). Quedan los datos del sobre, no los mensajes. */
+  borrado?: number;
   /** Hasta donde se ha leido el hilo de Slack. Va en disco a proposito: en memoria,
    *  reiniciar el demonio volvia a leer el hilo entero y reinyectaba en la sesion
    *  cada mensaje que ya se habia entregado. */
@@ -329,4 +331,23 @@ export function renderAviso(t: Thread, quedanSeg: number, forSession?: string): 
 
 export function renderClose(t: Thread): string {
   return `[spoochie ${t.id} | ${t.subject}] cerrado (${t.closeReason ?? "sin motivo"}). El tunel ya no entrega mensajes.`;
+}
+
+/**
+ * Al cerrar, la conversacion se borra. Queda el sobre (id, asunto, quien, cuando, por que
+ * se cerro) para `list` y para no volver a aceptar el mismo id; los mensajes, los ficheros
+ * bajados y el transcript se van. La memoria es del Claude que la tuvo delante, no del
+ * canal: un spoochie es una llamada, no un archivo.
+ */
+export function purgar(t: Thread, extras: { spool?: string; transcript?: string } = {}): Thread {
+  t.messages = [];
+  t.borrado = Date.now();
+  delete t.transcriptUrl;
+  delete t.transcriptOwner;
+  delete t.transcriptStale;
+  save(t);
+  for (const ruta of [extras.spool, extras.transcript]) {
+    if (ruta) { try { rmSync(ruta, { recursive: true, force: true }); } catch {} }
+  }
+  return t;
 }

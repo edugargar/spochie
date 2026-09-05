@@ -155,6 +155,22 @@ test("un mensaje que pasa del limite se rechaza antes de salir, no se corta", as
   expect(MAX_MENSAJE).toBeGreaterThan(20_000);
 });
 
+test("al cerrar, la conversacion se borra en local y queda el sobre", async () => {
+  const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "borrable", body: "esto no debe quedar" });
+  await rpc({ op: "accept", sessionId: "B", id: open.id });
+  await rpc({ op: "say", sessionId: "A", id: open.id, text: "ni esto" });
+  expect(T.load(open.id)!.messages.length).toBe(2);
+  await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
+  const t = T.load(open.id)!;
+  expect(t.state).toBe("closed");
+  expect(t.messages).toEqual([]);
+  expect(t.borrado).toBeGreaterThan(0);
+  expect(t.subject).toBe("borrable");
+  expect(JSON.stringify(t)).not.toContain("esto no debe quedar");
+  // El cierre llego a B igual, antes del borrado.
+  expect(await llega(B, x => x.includes(`[spoochie ${open.id} | borrable] cerrado (fin)`))).toBe(true);
+}, 20_000);
+
 test("un envio local dice entregado solo si el buzon lo acepto", async () => {
   const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "hecho", body: "hola" });
   await rpc({ op: "accept", sessionId: "B", id: open.id });

@@ -37,7 +37,7 @@ export const EVENT = "spoochie";
 export type Envelope = {
   v: 1;
   id: string;
-  kind: "invite" | "msg" | "notice" | "accept";
+  kind: "invite" | "msg" | "notice" | "accept" | "close";
   /** Quien habla, por su id de Slack. Sin esto un demonio no distingue lo que postea
    *  el de enfrente de lo que ha posteado el mismo: los dos postean como el bot. */
   from: string;
@@ -214,6 +214,7 @@ type OnMessage = (t: T.Thread, m: T.Msg) => Promise<void>;
 type OnAccept = (t: T.Thread, como: string) => Promise<void>;
 type OnRemoteAccept = (t: T.Thread, como: string) => Promise<void>;
 type OnOrden = (t: T.Thread, orden: "suelta" | "descarta") => Promise<void>;
+type OnCierre = (t: T.Thread, motivo: string) => Promise<void>;
 
 /**
  * Cada cuanto mira el buzon un demonio, segun cuantos demonios comparten la app.
@@ -234,6 +235,8 @@ export class SlackBridge {
   private lastDiscovery = 0;
 
   private botUserId: string | null = null;
+  /** El otro lado cerro el spoochie. */
+  onCierre: OnCierre | null = null;
   private myDm: string | null = null;
   /** Al arrancar se mira atras lo mismo que dura la cola de pendientes: un spoochie
    *  mas viejo que eso ya ha caducado, y uno de hace un minuto tiene que aparecer
@@ -259,7 +262,7 @@ export class SlackBridge {
     private onOrden?: OnOrden,
   ) {}
 
-  static fromConfig(onMessage: OnMessage, onAccept: OnAccept, onRemoteAccept: OnRemoteAccept, onOrden?: OnOrden): SlackBridge | null {
+  static fromConfig(onMessage: OnMessage, onAccept: OnAccept, onRemoteAccept: OnRemoteAccept, onOrden?: OnOrden, onCierre?: OnCierre): SlackBridge | null {
     const c = Cfg.load();
     const user = Cfg.slackToken(c);
     const bot = Cfg.slackBotToken(c);
@@ -267,7 +270,9 @@ export class SlackBridge {
     // bot busca personas igual de bien. Lo que no se puede pedir a nadie es un token
     // que solo se consigue instalando la app uno mismo.
     if (!bot || !c.slack?.userId) return null;
-    return new SlackBridge(user ?? "", bot, c.slack.userId, onMessage, onAccept, onRemoteAccept, onOrden);
+    const b = new SlackBridge(user ?? "", bot, c.slack.userId, onMessage, onAccept, onRemoteAccept, onOrden);
+    b.onCierre = onCierre ?? null;
+    return b;
   }
 
   /** Un 429 no se reintenta al momento: se respeta Retry-After y se para todo.
@@ -402,6 +407,7 @@ export class SlackBridge {
     const im = await this.call("conversations.open", { users: t.to.slackUser });
     const dm: string = im.channel.id;
     const { channel, tipo } = await this.hogar(t, dm);
+    let aviso: { channel: string; ts: string } | undefined;
     const env: Envelope = {
       v: 1, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
       subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
@@ -419,20 +425,45 @@ export class SlackBridge {
       // hilo de verdad, y un enlace para la persona.
       let enlace = tipo === "grupo" ? "vuestro grupo con el bot" : "el canal de spoochie";
       try { const p = await this.call("chat.getPermalink", { channel, message_ts: post.ts }); if (p?.permalink) enlace = `<${p.permalink}|${enlace}>`; } catch {}
-      await this.call("chat.postMessage", {
+      const av = await this.call("chat.postMessage", {
         channel: dm,
         text: `Spoochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
         blocks: [...inviteBlocks(t), ctx(`La conversacion sigue en ${enlace}, donde la veis los dos.`)],
         metadata: { event_type: EVENT, event_payload: { ...env, thread: { channel, ts: post.ts } } },
         unfurl_links: false,
       });
+      aviso = { channel: dm, ts: av.ts };
     }
     // Los ficheros del primer mensaje se suben al hilo recien creado. Antes solo los
     // subia post(), asi que una captura adjunta al abrir se quedaba en la maquina.
     for (const f of t.messages[0]?.files ?? []) {
       await subir(this.botToken, f, channel, post.ts);
     }
-    return { channel, ts: post.ts };
+    return { channel, ts: post.ts, ...(aviso ? { aviso } : {}) };
+  }
+
+  /**
+   * Borra en Slack todo lo que posteo el bot de este spoochie: el hilo entero (raiz y
+   * respuestas del bot), los ficheros que subio, y el aviso del DM del receptor. Lo que
+   * escribio una persona a mano no lo puede borrar el bot; se queda, sin contexto.
+   * Devuelve cuantos mensajes se borraron. Los dos demonios lo intentan: es idempotente.
+   */
+  async borrarHilo(t: T.Thread): Promise<number> {
+    if (!t.slack) return 0;
+    let n = 0;
+    const borrar = async (channel: string, ts: string) => { try { await this.call("chat.delete", { channel, ts }); n++; } catch {} };
+    let reps: any[] = [];
+    try { reps = (await this.get("conversations.replies", { channel: t.slack.channel, ts: t.slack.ts, limit: "200" })).messages ?? []; } catch {}
+    for (const r of reps) {
+      if (r.ts === t.slack.ts) continue;
+      if (!r.bot_id && !(this.botUserId && r.user === this.botUserId)) continue;
+      for (const f of r.files ?? []) { try { await this.call("files.delete", { file: f.id }); } catch {} }
+      await borrar(t.slack.channel, r.ts);
+    }
+    const raiz = reps.find(r => r.ts === t.slack!.ts);
+    if (!raiz || raiz.bot_id || (this.botUserId && raiz.user === this.botUserId)) await borrar(t.slack.channel, t.slack.ts);
+    if (t.slack.aviso) await borrar(t.slack.aviso.channel, t.slack.aviso.ts);
+    return n;
   }
 
   async post(t: T.Thread, notice: string, m?: T.Msg): Promise<boolean> {
@@ -441,7 +472,7 @@ export class SlackBridge {
     const mine = t.from.slackUser === this.me ? t.from : t.to;
     const env: Envelope = {
       v: 1, id: t.id,
-      kind: m ? "msg" : (notice.includes("ha aceptado el tunel") ? "accept" : "notice"),
+      kind: m ? "msg" : notice.includes("ha aceptado el tunel") ? "accept" : notice.includes("cerrado (") ? "close" : "notice",
       from: mine.slackUser ?? this.me,
       ...(m ? { kindOfMsg: m.kind } : {}),
     };
@@ -604,6 +635,9 @@ export class SlackBridge {
         // solo se sabe por el sobre. Sin esto un demonio se salta al otro.
         if (env.from === this.me) continue;
         if (env.kind === "accept") { await this.onRemoteAccept(t, "en la otra maquina"); continue; }
+        // El cierre del otro lado: antes era un aviso mas y se ignoraba, y este lado
+        // se enteraba por silencio a los 10 min. Ahora cierra (y borra) aqui tambien.
+        if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, /cerrado \(([^)]*)\)/.exec(rep.text ?? "")?.[1] ?? "cerrado por el otro lado"); continue; }
         if (env.kind === "notice" || env.kind === "invite") continue;
         const texto = bodyFromBlocks((rep as any).blocks) || rep.text || "";
         const firma = verificarSobre(env, texto);

@@ -172,3 +172,27 @@ test("el aviso de silencio trae hechos, no deja hueco a deducir que el otro lado
   expect(a).toContain("de su lado no ha llegado nada");
   expect(a).toContain("No lo deduzcas");
 });
+
+test("purgar deja el sobre y se lleva los mensajes, el spool y el transcript", async () => {
+  const T = await import("../src/threads.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const base = mkdtempSync(join(tmpdir(), "sp-purga-"));
+  const spool = join(base, "files"); mkdirSync(spool); writeFileSync(join(spool, "captura.png"), "x");
+  const transcript = join(base, "t.html"); writeFileSync(transcript, "<html>");
+  const t: any = { id: "pg1", subject: "el boton", state: "closed", createdAt: 1, acceptedAt: 2, closedAt: 3, closeReason: "resuelto", lastActivityAt: 3, context: { branch: "feat/x" },
+    from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "B", name: "b", cwd: "/b", human: "Edu" },
+    transcriptUrl: "https://x", transcriptOwner: "A", messages: [{ at: 1, from: "A", author: "claude", kind: "text", text: "secreto" }] };
+  T.save(t);
+  T.purgar(t, { spool, transcript });
+  const p = T.load("pg1")!;
+  expect(p.messages).toEqual([]);
+  expect(p.borrado).toBeGreaterThan(0);
+  expect(p.subject).toBe("el boton");
+  expect(p.closeReason).toBe("resuelto");
+  expect(p.transcriptUrl).toBeUndefined();
+  expect(JSON.stringify(p)).not.toContain("secreto");
+  expect(existsSync(spool)).toBe(false);
+  expect(existsSync(transcript)).toBe(false);
+});

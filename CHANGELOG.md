@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 (2026-09-05)
+
+- A spoochie is deleted when it closes (local, files, transcript, and everything the bot posted in Slack); the close now reaches the other machine as its own envelope kind.
+
 ## 0.8.1 (2026-09-05)
 
 - Origin configurable in one place (marketplace.json origin, SPOOCHIE_ORIGEN); docs/for-your-company.md.

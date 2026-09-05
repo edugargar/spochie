@@ -22,6 +22,8 @@ import * as Cfg from "./config.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
 import { publishTranscript, rutaTranscript } from "./transcript.ts";
+import { SPOOL } from "./files.ts";
+import { join } from "node:path";
 import { SlackBridge } from "./slack.ts";
 import { repoMatches } from "./match.ts";
 
@@ -475,7 +477,7 @@ async function handle(req: Req): Promise<any> {
     }
 
     case "slack-reload": {
-      slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}));
+      slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
       return { ok: true, slack: Boolean(slack) };
     }
 
@@ -678,7 +680,18 @@ async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): 
   return n;
 }
 
-async function closeThread(t: T.Thread, reason: string, bySession?: string) {
+/** El otro lado cerro: se cierra aqui sin volver a avisarle, y se borra igual. */
+async function onRemoteClose(t: T.Thread, motivo: string) {
+  const fresco = T.load(t.id) ?? t;
+  if (fresco.state === "closed") return;
+  await closeThread(fresco, motivo, undefined, true);
+}
+
+/** Lo que se borra al cerrar, con el retraso justo para que el otro demonio lea el
+ *  cierre antes de que desaparezca del hilo (su sondeo es de 4 s). */
+const BORRAR_SLACK_TRAS_MS = 45_000;
+
+async function closeThread(t: T.Thread, reason: string, bySession?: string, remoto = false) {
   cerrarDialogo(t.id);
   t.state = "closed";
   t.closedAt = Date.now();
@@ -687,11 +700,22 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string) {
   const notified: string[] = [];
   for (const side of [t.from, t.to]) {
     if (side.sessionId === bySession) continue;
+    // Si lo cerro el otro lado, no se le devuelve el aviso: solo se entera este.
+    if (remoto && !sessById(side.sessionId)) continue;
     const ok = await sendToSide(t, side, T.renderClose(t));
     notified.push(`${side.name}:${ok ? "entregado" : "FALLO"}`);
   }
   await refreshTranscript(t);
   log("close", t.id, reason, notified.join(" "));
+  if (Cfg.load().borrarAlCerrar !== false) {
+    // En local, ya: la conversacion vive en el Claude que la tuvo, no aqui.
+    T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
+    log("borrado", t.id, "local");
+    if (slack && t.slack) {
+      const s = slack;
+      setTimeout(async () => { const n = await s.borrarHilo(t); log("borrado", t.id, "slack", n, "mensajes del bot"); }, BORRAR_SLACK_TRAS_MS).unref();
+    }
+  }
   const ap = apartes.get(t.id);
   if (t.copiaDe) { const [origen, copia] = [t.copiaDe, t.to.cwd]; setTimeout(() => { Ap.quitarCopia(origen, copia); log("aparte", t.id, "copia retirada"); }, 60_000).unref(); }
   if (ap?.modo === "fondo") setTimeout(() => Ap.matar(ap), 15_000).unref();
@@ -731,7 +755,7 @@ function main() {
   // El latido es lo unico que distingue un demonio vivo de uno colgado.
   latir();
   setInterval(latir, LATIDO_MS).unref();
-  slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}));
+  slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
   // Lo que un demonio anterior dejo sin sacar, y las ventanas de aparte que siguen vivas.
   const reanudados = reanudar(async (tt, mm) => {
     const yo = sessById(tt.from.sessionId) ? tt.from : tt.to;

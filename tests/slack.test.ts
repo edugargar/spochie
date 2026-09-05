@@ -211,7 +211,8 @@ test("el hilo de un spoochie que abro va a un grupo que vemos los dos, y el DM d
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "grupo" } } as any);
   const { b, llamadas } = puenteAbrir();
   const r = await b.openThread(t);
-  expect(r).toEqual({ channel: "G_GRUPO", ts: "200.000" });
+  // Y se guarda donde quedo el aviso del DM, para poder borrarlo al cerrar.
+  expect(r).toEqual({ channel: "G_GRUPO", ts: "200.000", aviso: { channel: "D_ALEX", ts: "201.000" } });
   const abiertos = llamadas.filter(l => l.method === "conversations.open").map(l => l.body.users);
   expect(abiertos).toContain("U_ALEX");
   expect(abiertos).toContain("U_EDU,U_ALEX");
@@ -243,4 +244,44 @@ test("con --hilos canal, el hilo va al canal y el aviso al DM", async () => {
   expect(r.channel).toBe("C_SPOOCHIE");
   expect(llamadas.filter(l => l.method === "chat.postMessage").map(l => l.body.channel)).toEqual(["C_SPOOCHIE", "D_ALEX"]);
   Cfg.save({ guardian: false, transcript: false } as any);
+});
+
+test("el cierre viaja con su propio tipo y el otro lado cierra al leerlo", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+  const posts: any[] = [];
+  b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
+  b.pensandoOff = async () => {};
+  await b.post({ ...t, slack: { channel: "G1", ts: "0.1" }, closeReason: "resuelto" }, "[spoochie a3f1 | s] cerrado (resuelto). El tunel ya no entrega mensajes.");
+  expect(posts[0].metadata.event_payload.kind).toBe("close");
+
+  // Del otro lado: el sobre "close" llama a onCierre con el motivo, y no se entrega como turno.
+  const entregados: any[] = [];
+  const cerrados: string[] = [];
+  const r: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_ALEX", async (_t: any, m: any) => { entregados.push(m); }, async () => {}, async () => {});
+  r.onCierre = async (_t: any, motivo: string) => { cerrados.push(motivo); };
+  r.get = async () => ({ messages: [
+    { ts: "0.1", user: "UBOT", text: "raiz" },
+    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "[spoochie a3f1 | s] cerrado (resuelto). x", metadata: { event_type: EVENT, event_payload: { v: 1, id: "a3f1", kind: "close", from: "U_EDU" } } },
+  ] });
+  const hilo = { ...t, slack: { channel: "G1", ts: "0.1" } };
+  const Tm = await import("../src/threads.ts"); Tm.save(hilo as any);
+  await r.pollThread(Tm.load("a3f1"));
+  expect(cerrados).toEqual(["resuelto"]);
+  expect(entregados).toEqual([]);
+});
+
+test("borrarHilo borra lo del bot (mensajes, ficheros, raiz y aviso) y deja lo que escribio una persona", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+  b.botUserId = "UBOT";
+  const borrados: string[] = [];
+  b.get = async () => ({ messages: [
+    { ts: "0.1", user: "UBOT", bot_id: "B1", text: "raiz" },
+    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "del bot", files: [{ id: "F1" }] },
+    { ts: "0.3", user: "U_ALEX", text: "escrito a mano" },
+    { ts: "0.4", bot_id: "B1", text: "del bot otra vez" },
+  ] });
+  b.call = async (method: string, body: any) => { borrados.push(`${method}:${body.ts ?? body.file}`); return {}; };
+  const n = await b.borrarHilo({ ...t, slack: { channel: "G1", ts: "0.1", aviso: { channel: "D_ALEX", ts: "9.9" } } });
+  expect(borrados).toEqual(["files.delete:F1", "chat.delete:0.2", "chat.delete:0.4", "chat.delete:0.1", "chat.delete:9.9"]);
+  expect(n).toBe(4);
 });

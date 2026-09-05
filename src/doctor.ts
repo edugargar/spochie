@@ -113,6 +113,12 @@ export async function revisar(): Promise<Chequeo[]> {
 
   out.push({
     ok: true,
+    que: "borrado al cerrar",
+    detalle: c.borrarAlCerrar === false ? "apagado: las conversaciones se quedan en disco y en Slack" : "encendido: al cerrar se borra en local y lo que posteo el bot en Slack",
+  });
+
+  out.push({
+    ok: true,
     que: "Claude aparte",
     detalle: c.aparte === false ? "apagado: todo entra en tu sesion" : `encendido${c.aparteCopia === false ? ", en el checkout real" : ", sobre una copia limpia del repo"}`,
   });

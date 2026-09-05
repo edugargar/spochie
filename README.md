@@ -405,6 +405,21 @@ uploads them to the thread and the daemon on the other side downloads them to it
 spool, so what that session receives is a path that exists on **its** disk. 10 MB cap:
 spoochie is for clues, not for moving binaries.
 
+## A spoochie is a call, not an archive
+
+When a spoochie closes, the conversation is deleted: locally only the envelope stays
+(id, subject, who, when, why it closed) so `list` still works and the same id can't be
+reused; the messages, the downloaded files and the HTML transcript go. In Slack, 45 s
+later (enough for the other daemon to read the close), everything the bot posted goes
+too: the thread, its files, and the pointer in the receiver's DM. What a person typed by
+hand stays, because the bot can't delete it. The knowledge lives on in the Claude that
+had the conversation: the asking session keeps every answer in its context and carries
+on. `spoochie config --borrar off` keeps conversations instead.
+
+Closing also reaches the other machine now: the close travels as its own envelope kind
+and the other daemon closes (and deletes) at once, instead of finding out by silence
+ten minutes later.
+
 ## The transcript
 
 Off by default, and we turned it off for ourselves too: the Slack thread already is the

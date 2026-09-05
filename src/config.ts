@@ -17,6 +17,10 @@ export type Config = {
    *  ficheros no se tocan. Pega: lo que no este commiteado (.env, cambios locales) no
    *  esta en la copia. Apagado, atiende en el checkout real. */
   aparteCopia?: boolean;
+  /** Al cerrar un spoochie se borra la conversacion: en local (quedan id, asunto, quien y
+   *  cuando) y en el transporte (en Slack, todo lo que posteo el bot; lo que escribio una
+   *  persona a mano se queda, el bot no puede borrarlo). Por defecto si. */
+  borrarAlCerrar?: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
   contacts?: Record<string, { id: string; name: string; pk?: string }>;
