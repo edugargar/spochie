@@ -1,6 +1,6 @@
 {
   "name": "spoochie",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread.",
   "author": {
     "name": "Eduardo Garcia"

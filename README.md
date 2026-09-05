@@ -32,8 +32,9 @@ other person has to say yes before anything opens, and both of you see the whole
 exchange in a Slack thread, where you can step in at any time.
 
 Under the hood it is a small daemon on each machine, the inbox socket that Claude Code
-already exposes for every session, and a Slack bot DM used as transport and as the
-human-visible record. Nobody writes on anyone else's machine: what travels is text, a
+already exposes for every session, end-to-end encrypted messages over public Nostr relays
+between machines, and a Slack bot that notifies people (and can carry the thread instead,
+if a team prefers). Nobody writes on anyone else's machine: what travels is text, a
 patch to apply if it convinces you, or a branch name. The Claude that answers on the
 other side runs in its own terminal window, read-only, so the person's working session
 is never interrupted by someone else's conversation.
@@ -173,8 +174,10 @@ Parts:
 - **daemon, one per machine**: the only thing alive between turns, so it keeps the clocks
   and routes. A Claude can't hold a timer; it only exists while it thinks. On macOS it
   runs under launchd and writes a heartbeat every 20 s that `doctor` measures.
-- **Slack bridge**: transport between machines, addressing, and the source of truth for
-  state.
+- **Nostr bridge**: the transport between machines since 0.9: end-to-end encrypted
+  private messages through public relays, no server of ours.
+- **Slack bridge**: notifications, and the transport for people without a Nostr key or
+  teams that choose it.
 - **guardian**: on the receiving side, Haiku reads every incoming message. Off-topic
   gets a label; a message that asks the receiving Claude to act is held until the
   receiving human releases it.
@@ -351,6 +354,42 @@ What you should know:
 - **The daemon's local socket has no auth.** Any process running as your user can ask it
   to inject text into your sessions. On a single-user machine that's the same boundary as
   your own processes; on a shared box it isn't.
+
+## Nostr: no server, your keys, encrypted, deleted
+
+Since 0.9, the conversation between two machines travels over [Nostr](https://nostr.com)
+by default, and Slack is the notifier. There is no server of ours and no account for
+anyone: each person gets a secp256k1 key pair at join (in `~/.claude/spoochie/config.json`,
+mode 0600), and messages go through public relays that already exist. Anyone can run
+one; each person picks theirs (`spoochie nostr --relays wss://a,wss://b`; three free
+public relays by default).
+
+What a relay sees: an event of kind 1059 addressed to a public key, signed by a random
+one-time key, with a randomised timestamp. Nothing else. Inside, the message is a NIP-17
+private message: the text in `content`, the subject in a `subject` tag (so a Nostr client
+on your phone shows it readable), spoochie's envelope in an `sp` tag, sealed and signed
+by the sender (kind 13) and gift-wrapped for the receiver (kind 1059) with NIP-44
+encryption. Only the receiver's key opens it. When the spoochie closes, each side asks the
+relays to delete every event it published (NIP-09, signed with the one-time key it kept),
+and deletes locally as described above.
+
+Who can reach you: only someone whose key is in your contacts, which is what the
+invitation puts there. A perfectly formed envelope from an unknown key is dropped
+without opening a tunnel. The invitation carries the inviter's key and relays; when the
+newcomer joins, their daemon sends a "hola" with their key back over Nostr, and the two
+can talk. People who were already on spoochie by Slack exchange keys automatically: each
+daemon sends its key by Slack DM once to every contact that has none, and the other
+daemon answers with its own. Nothing to re-join.
+
+Slack keeps its job as the place that notifies you: when someone opens a spoochie with
+you over Nostr, the bot DMs you one line pointing to the dialog on your Mac. The thread
+itself is not in Slack. `spoochie config --transporte slack` puts threads back in Slack
+for everyone; contacts without a Nostr key use Slack regardless. Files (screenshots)
+are not carried over Nostr yet: patches are text and travel fine.
+
+Tested against real relays (publish, receive, decrypt, delete) and with two real daemons
+talking through a shared directory that stands in for the relays, with the whole
+lifecycle and a check that no plaintext ever touches the "relay".
 
 ## Slack, inside
 

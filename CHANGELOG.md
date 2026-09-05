@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 (2026-09-05)
+
+- Conversations between machines travel over Nostr by default: NIP-17 private messages (NIP-44 encryption, NIP-59 gift wrap) through public relays, no server of ours, keys in your config. Only contacts with a known key can reach you.
+- On close, each side asks the relays to delete what it published (NIP-09) and deletes locally.
+- Slack becomes the notifier (one DM line when someone opens a spoochie with you) and the key-exchange channel: existing Slack contacts swap Nostr keys automatically, nothing to re-join. `spoochie config --transporte slack` keeps threads in Slack.
+- `spoochie nostr` shows your key and relays; `--relays` sets them. `spoochie invite` works without Slack (prints a Nostr-only invitation). `doctor` shows the key and which contacts still lack one.
+- Files are not carried over Nostr yet.
+
 ## 0.8.2 (2026-09-05)
 
 - A spoochie is deleted when it closes (local, files, transcript, and everything the bot posted in Slack); the close now reaches the other machine as its own envelope kind.
