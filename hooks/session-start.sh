@@ -11,7 +11,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/bin"
 VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/plugin.json" | head -1)
 BIN="$DIR/spoochie-$VERSION"
-REPO="edugargar/spoochie"
+# El repo del que bajar el binario: el mismo del que se instalo el plugin. Un fork lo
+# cambia en .claude-plugin/marketplace.json ("origin") y aqui no hay que tocar nada.
+REPO=$(sed -n 's/.*"origin" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/marketplace.json" | head -1)
+[ -n "$REPO" ] || REPO="edugargar/spoochie"
+REPO="${SPOOCHIE_ORIGEN:-$REPO}"
 
 if [ ! -x "$BIN" ] && ! command -v bun >/dev/null 2>&1; then
   os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m)

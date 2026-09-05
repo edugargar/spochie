@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { ORIGEN } from "./origen.ts";
 
 /** Lo que viaja en la invitacion. `u` es para quien va (asi el alta no tiene que
  *  buscarse a si mismo en Slack, que exige un scope que la app puede no tener) e `i`
@@ -43,7 +44,7 @@ export function leerInvitacion(blob: string): Invitacion | null {
 
 /** El DM que recibe quien se da de alta. Lleva todo lo que tiene que hacer, en
  *  orden, con la cadena ya dentro: no hay nada que pedir aparte. */
-export function textoInvitacion(blob: string, quien: string, repo = "edugargar/spoochie"): string {
+export function textoInvitacion(blob: string, quien: string, repo = ORIGEN): string {
   const arroba = quien.toLowerCase().replace(/\s+/g, "");
   return [
     `${quien} te invita a spoochie: un tunel entre tu sesion de Claude Code y la suya.`,

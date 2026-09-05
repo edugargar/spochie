@@ -22,6 +22,7 @@ import * as Cfg from "./config.ts";
 import { misClaves, firmar, verificarSobre, type Veredicto } from "./firma.ts";
 import * as T from "./threads.ts";
 import { VERSION, linea, masNuevaQue } from "./version.ts";
+import { PLUGIN } from "./origen.ts";
 import { subir, bajar } from "./files.ts";
 
 const API = "https://slack.com/api/";
@@ -330,7 +331,7 @@ export class SlackBridge {
     fresco.avisoVersion = true;
     T.save(fresco);
     const quien = env.from === fresco.from.slackUser ? (fresco.from.human ?? fresco.from.name) : (fresco.to.human ?? fresco.to.name);
-    await this.aviso(fresco, `:information_source: ${quien} tiene spoochie ${otra} y aqui hay ${VERSION}. Puede que algo no le funcione igual: \`/plugin update spoochie@edugargar\` y reiniciar una sesion.`);
+    await this.aviso(fresco, `:information_source: ${quien} tiene spoochie ${otra} y aqui hay ${VERSION}. Puede que algo no le funcione igual: \`/plugin update ${PLUGIN}\` y reiniciar una sesion.`);
   }
 
   /** El DM entre el bot y yo: el unico canal que hay que mirar para lo que me llega. */

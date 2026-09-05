@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 (2026-09-05)
+
+- Origin configurable in one place (marketplace.json origin, SPOOCHIE_ORIGEN); docs/for-your-company.md.
+
 ## 0.8.0 (2026-09-04)
 
 - Outgoing messages are queued on disk and resumed after a daemon restart; failed publishes retry every minute. Side windows are re-attached after a restart.

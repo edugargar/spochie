@@ -5,8 +5,7 @@
  * dice una vez al dia en el hilo, y `doctor` lo ensena.
  */
 import { VERSION, masNuevaQue } from "./version.ts";
-
-const REPO = "edugargar/spoochie";
+import { ORIGEN as REPO, PLUGIN } from "./origen.ts";
 const CADA_MS = 6 * 60 * 60 * 1000;
 let cache: { cuando: number; version: string | null } | null = null;
 
@@ -26,5 +25,5 @@ export async function ultimaPublicada(): Promise<string | null> {
 export async function avisoNueva(): Promise<string | null> {
   const u = await ultimaPublicada();
   if (!u || !masNuevaQue(u, VERSION)) return null;
-  return `hay spoochie ${u} (esta maquina tiene ${VERSION}): /plugin update spoochie@edugargar y reiniciar una sesion`;
+  return `hay spoochie ${u} (esta maquina tiene ${VERSION}): /plugin update ${PLUGIN} y reiniciar una sesion`;
 }

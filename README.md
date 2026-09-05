@@ -431,6 +431,14 @@ marked untested, never passed.
 file with loose permissions or a dead daemon don't error, they just make the message not
 arrive and nobody notices.
 
+## Using it in your company
+
+Nothing here depends on us: no server, no account, no data outside your Slack and your
+machines. `docs/for-your-company.md` covers the two ways: install from this repository as
+is (create the Slack app from `docs/slack-app-manifest.yml`, invite people), or fork it
+and change one field in `.claude-plugin/marketplace.json` so the plugin and the verified
+binaries come from your GitHub.
+
 ## What it doesn't do
 
 - More than two participants. Deliberate: a spoochie is a pair.
@@ -440,7 +448,7 @@ arrive and nobody notices.
 ## Development
 
 ```
-bun test                                # 95 tests, no network
+bun test                                # 114 tests, no network
 SPOOCHIE_HOME=/tmp/x bun run src/daemon.ts
 ```
 
