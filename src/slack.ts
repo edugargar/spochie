@@ -4,7 +4,7 @@
  * y un estado local se desincroniza en cuanto alguien cierra el portatil.
  *
  * NO usa Socket Mode. Con varias conexiones de la misma app, Slack entrega cada
- * evento a UNA sola, asi que un spoochie para Alex se lo podria quedar el demonio de
+ * evento a UNA sola, asi que un spoochie para Sam se lo podria quedar el demonio de
  * Edu.
  *
  * Y NO recorre tus DMs buscando spoochies. Esa fue la primera version y se cayo a la
@@ -384,7 +384,7 @@ export class SlackBridge {
   /** Donde va a vivir el hilo de un spoochie que abro yo.
    *
    *  Con el hilo en el DM entre el bot y quien recibe, quien abre no lo veia en Slack:
-   *  Edu le abrio uno a Alex y solo Alex tenia la conversacion delante. Ahora, por
+   *  Edu le abrio uno a Sam y solo Sam tenia la conversacion delante. Ahora, por
    *  defecto, el hilo va a un grupo de mensajes directos bot + yo + la otra persona,
    *  que vemos los dos. El DM del receptor con el bot sigue recibiendo un aviso con la
    *  invitacion entera, porque es el unico canal que su demonio vigila; ese aviso lleva
@@ -538,7 +538,7 @@ export class SlackBridge {
         text: `${quien} está mirando su código…`,
         blocks: [ctx(`:hourglass_flowing_sand: _${quien} está mirando su código…_`)],
         // Sin sobre, el demonio del otro lado se lo tragaba como si fuera una persona
-        // escribiendo, y su Claude recibia "Alex esta mirando su codigo" como un turno.
+        // escribiendo, y su Claude recibia "Sam esta mirando su codigo" como un turno.
         metadata: { event_type: EVENT, event_payload: { v: 1, id: t.id, kind: "notice", from: this.me } },
       });
       this.pensando.set(t.id, { ts: r.ts, desde: Date.now() });

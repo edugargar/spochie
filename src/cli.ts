@@ -118,7 +118,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
 
   Alta de otra persona, en un pegado:
-  spoochie invite --to <U0..|email> [--name Alex]   el bot le manda la invitacion por DM, con los pasos
+  spoochie invite --to <U0..|email> [--name Sam]   el bot le manda la invitacion por DM, con los pasos
   spoochie invite                        o imprime la linea para mandarsela tu
   spoochie join <cadena> [--email <mail>] la que ejecuta quien se da de alta
       (el email sale de git config si no lo pasas; pega la linea entera, se limpia sola)
@@ -263,7 +263,7 @@ async function main() {
         // Sin users:read el nombre no se puede sacar de Slack; --name lo pone quien invita.
         const r = await api("users.info", { user: to });
         const nombre = flag(rest, "name") ?? (r.ok ? (r.user?.profile?.real_name ?? r.user?.name) : undefined);
-        if (!nombre) { console.error(`la app no puede leer el nombre de ${to}; dimelo tu:  spoochie invite --to ${to} --name Alex`); process.exit(1); return; }
+        if (!nombre) { console.error(`la app no puede leer el nombre de ${to}; dimelo tu:  spoochie invite --to ${to} --name Sam`); process.exit(1); return; }
         dest = { id: to, name: nombre };
       }
       if (!dest && to.includes("@")) {

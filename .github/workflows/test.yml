@@ -12,11 +12,23 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: latest }
       # Hasta 0.8 no habia dependencias y bun test corria sin node_modules; nostr-tools
       # llego con 0.9 y el demonio moria al importar, asi que todos los tests con demonio
       # caian en CI. El lock fijo: lo que se prueba es lo que se compila.
       - run: bun install --frozen-lockfile
       - run: bun test
+  # Nada que identifique a una persona o empresa ajena al proyecto, ni tokens, ni ids
+  # reales de Slack, ni correos fuera de la lista: en el arbol, en los mensajes y en los
+  # correos de autor de los commits nuevos. La lista privada de palabras es un secreto.
+  fugas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: latest }
+      - run: bun scripts/fugas.ts --desde "${{ github.event.pull_request.base.sha || github.event.before }}"
+        env: { FUGAS_PROHIBIDAS: "${{ secrets.FUGAS_PROHIBIDAS }}" }
