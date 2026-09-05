@@ -13,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
+      # Hasta 0.8 no habia dependencias y bun test corria sin node_modules; nostr-tools
+      # llego con 0.9 y el demonio moria al importar, asi que todos los tests con demonio
+      # caian en CI. El lock fijo: lo que se prueba es lo que se compila.
+      - run: bun install --frozen-lockfile
       - run: bun test
       - name: compile
         run: |
