@@ -4,7 +4,13 @@ import { ORIGEN } from "./origen.ts";
 /** Lo que viaja en la invitacion. `u` es para quien va (asi el alta no tiene que
  *  buscarse a si mismo en Slack, que exige un scope que la app puede no tener) e `i`
  *  es quien invita, para que "@edu" resuelva en local sin llamar a Slack. */
-export type Invitacion = { b: string; t?: string; u?: string; n?: string; i?: { id: string; name: string; pk?: string } };
+export type Invitacion = {
+  /** Token del bot de Slack. Puede faltar: una invitacion solo por Nostr. */
+  b?: string;
+  t?: string; u?: string; n?: string;
+  /** Quien invita: id de Slack (o "nostr:<pk>"), nombre, clave ed25519, clave Nostr y reles. */
+  i?: { id: string; name: string; pk?: string; np?: string; r?: string[] };
+};
 
 export function crearInvitacion(inv: Invitacion): string {
   return Buffer.from(JSON.stringify(inv)).toString("base64url");
@@ -28,8 +34,10 @@ export function limpiarCadena(entrada: string): string | null {
 export function leerInvitacion(blob: string): Invitacion | null {
   try {
     const j = JSON.parse(Buffer.from(blob, "base64url").toString("utf8"));
-    if (typeof j?.b !== "string" || !j.b) return null;
-    const inv: Invitacion = { b: j.b };
+    const conSlack = typeof j?.b === "string" && j.b;
+    const conNostr = typeof j?.i?.np === "string" && /^[0-9a-f]{64}$/.test(j.i.np);
+    if (!conSlack && !conNostr) return null;
+    const inv: Invitacion = conSlack ? { b: j.b } : {};
     if (typeof j.t === "string") inv.t = j.t;
     if (typeof j.u === "string" && /^[UW][A-Z0-9]{6,}$/.test(j.u)) inv.u = j.u;
     // Como se llama quien se da de alta, para que no firme con el usuario de su Mac.
@@ -37,6 +45,8 @@ export function leerInvitacion(blob: string): Invitacion | null {
     if (j.i && typeof j.i.id === "string" && typeof j.i.name === "string") {
       inv.i = { id: j.i.id, name: j.i.name };
       if (typeof j.i.pk === "string") inv.i.pk = j.i.pk;
+      if (conNostr) inv.i.np = j.i.np;
+      if (Array.isArray(j.i.r)) inv.i.r = j.i.r.filter((x: unknown) => typeof x === "string" && /^wss?:\/\//.test(x)).slice(0, 8);
     }
     return inv;
   } catch { return null; }

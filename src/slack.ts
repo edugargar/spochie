@@ -37,7 +37,7 @@ export const EVENT = "spoochie";
 export type Envelope = {
   v: 1;
   id: string;
-  kind: "invite" | "msg" | "notice" | "accept" | "close";
+  kind: "invite" | "msg" | "notice" | "accept" | "close" | "hola";
   /** Quien habla, por su id de Slack. Sin esto un demonio no distingue lo que postea
    *  el de enfrente de lo que ha posteado el mismo: los dos postean como el bot. */
   from: string;
@@ -53,6 +53,9 @@ export type Envelope = {
   thread?: { channel: string; ts: string };
   /** La version de spoochie de quien lo manda. Sin ella, es anterior a 0.8. */
   app?: string;
+  /** En un "hola": mi clave Nostr y mis reles, para que los spoochies conmigo vayan cifrados. */
+  np?: string;
+  r?: string[];
 };
 
 /** Slack corta cada bloque a 3000 caracteres. Trocear por lineas en vez de rebanar,
@@ -235,6 +238,7 @@ export class SlackBridge {
   private lastDiscovery = 0;
 
   private botUserId: string | null = null;
+  private holasVistos = new Set<string>();
   /** El otro lado cerro el spoochie. */
   onCierre: OnCierre | null = null;
   private myDm: string | null = null;
@@ -440,6 +444,32 @@ export class SlackBridge {
       await subir(this.botToken, f, channel, post.ts);
     }
     return { channel, ts: post.ts, ...(aviso ? { aviso } : {}) };
+  }
+
+  /** Le mando a una persona mi clave Nostr por su DM con el bot. Asi quien ya estaba en
+   *  spoochie por Slack pasa a Nostr sin volver a darse de alta: su demonio la guarda
+   *  en la agenda y contesta con la suya. */
+  async hola(userId: string, np: string, r: string[], nombre: string): Promise<boolean> {
+    try {
+      const im = await this.call("conversations.open", { users: userId });
+      await this.call("chat.postMessage", {
+        channel: im.channel.id, text: `${nombre} ya puede hablar contigo por Nostr (cifrado, sin pasar por Slack).`,
+        blocks: [ctx(`:key: ${nombre} ya puede hablar contigo por Nostr: los spoochies entre vosotros iran cifrados y no pasaran por Slack. Slack seguira avisandote.`)],
+        metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: this.me, fromName: nombre, np, r, app: VERSION } },
+      });
+      return true;
+    } catch { return false; }
+  }
+  /** Al recibir un hola por Slack. */
+  onHola: ((de: string, nombre: string, np: string, r: string[]) => Promise<void>) | null = null;
+
+  /** Un aviso a una persona por su DM con el bot, sin sobre: el hilo vive en otro sitio. */
+  async avisarDm(userId: string, texto: string): Promise<boolean> {
+    try {
+      const im = await this.call("conversations.open", { users: userId });
+      await this.call("chat.postMessage", { channel: im.channel.id, text: texto, blocks: [ctx(texto)], metadata: { event_type: EVENT, event_payload: { v: 1, id: "aviso", kind: "notice", from: this.me } } });
+      return true;
+    } catch { return false; }
   }
 
   /**
@@ -736,6 +766,11 @@ export class SlackBridge {
     for (const msg of (hist.messages ?? []).slice().reverse()) {
       if (msg.ts > this.inboxCursor) this.inboxCursor = msg.ts;
       const env = envelopeOf(msg);
+      if (env?.kind === "hola" && env.from !== this.me && env.np && /^[0-9a-f]{64}$/.test(env.np) && !this.holasVistos.has(msg.ts)) {
+        this.holasVistos.add(msg.ts);
+        if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : []);
+        continue;
+      }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
       if (verificarSobre(env, bodyFromBlocks(msg.blocks)) === "mala") {
         known.add(env.id);

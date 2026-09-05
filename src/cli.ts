@@ -111,7 +111,8 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
   spoochie doctor                        repasa lo que tiene que estar bien para entregar
-  spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--copia on|off] [--borrar on|off] [--hilos grupo|canal|dm] [--canal C0..]
+  spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--copia on|off] [--borrar on|off] [--transporte nostr|slack] [--hilos grupo|canal|dm] [--canal C0..]
+  spoochie nostr [--relays wss://a,wss://b]      tu clave Nostr y tus reles
   spoochie --version
       aparte: los spoochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
   spoochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
@@ -197,6 +198,11 @@ async function main() {
     if (flag(rest, "aparte")) c.aparte = flag(rest, "aparte") === "on";
     if (flag(rest, "copia")) c.aparteCopia = flag(rest, "copia") === "on";
     if (flag(rest, "borrar")) c.borrarAlCerrar = flag(rest, "borrar") === "on";
+    if (flag(rest, "transporte")) {
+      const v = flag(rest, "transporte");
+      if (v !== "nostr" && v !== "slack") { console.error("spoochie: --transporte nostr | slack"); process.exit(1); }
+      c.transporte = v;
+    }
     const hilos = flag(rest, "hilos");
     if (hilos && c.slack) {
       if (!["grupo", "canal", "dm"].includes(hilos)) { console.error("spoochie: --hilos grupo | canal | dm"); process.exit(1); }
@@ -226,13 +232,23 @@ async function main() {
   if (cmd === "invite") {
     const c = Cfg.load();
     const bot = Cfg.slackBotToken(c);
-    if (!bot || !c.slack?.userId) { console.error("aqui no hay Slack configurado; no puedo invitar a nadie"); process.exit(1); return; }
-    const { whoIs } = await import("./slack.ts");
     const { crearInvitacion, textoInvitacion } = await import("./alta.ts");
+    const { misClaves } = await import("./firma.ts");
+    const N = await import("./nostr.ts");
+    const nk = N.misClaves(c);
+    Cfg.save(c);
+    const yo = { id: c.slack?.userId ?? `nostr:${nk.pk}`, name: c.human ?? userInfo().username, pk: misClaves(c).pub, np: nk.pk, r: N.misReles(c) };
+    // Sin Slack: una invitacion solo por Nostr, para mandar por donde sea. No hay DM
+    // que enviar; se imprime y listo.
+    if (!bot || !c.slack?.userId) {
+      const blob = crearInvitacion({ n: flag(rest, "name"), i: yo });
+      console.log(textoInvitacion(blob, yo.name));
+      console.log(`\n(Sin Slack: mandale esto por donde quieras. Cuando lo pegue, su clave te llegara por Nostr y podras escribirle @${Cfg.claveContacto(flag(rest, "name") ?? "nombre")}.)`);
+      return;
+    }
+    const { whoIs } = await import("./slack.ts");
     const quien = await whoIs(bot);
     if (!quien) { console.error("el token de bot que tienes no vale (auth.test)"); process.exit(1); return; }
-    const { misClaves } = await import("./firma.ts");
-    const yo = { id: c.slack.userId, name: c.human ?? userInfo().username, pk: misClaves(c).pub };
     const api = (m: string, body: unknown) => fetch(`https://slack.com/api/${m}`, {
       method: "POST", headers: { authorization: `Bearer ${bot}`, "content-type": "application/json" }, body: JSON.stringify(body),
     }).then(r => r.json());
@@ -295,13 +311,13 @@ async function main() {
     if (!datos) { console.error("esa cadena no es una invitacion de spoochie"); process.exit(2); return; }
 
     const { whoIs } = await import("./slack.ts");
-    const bot = await whoIs(datos.b);
-    if (!bot) { console.error("el token de la invitacion ya no vale. Pide otra."); process.exit(1); }
+    const bot = datos.b ? await whoIs(datos.b) : null;
+    if (datos.b && !bot) { console.error("el token de la invitacion ya no vale. Pide otra."); process.exit(1); }
 
     // Tu id de Slack: por email si el bot puede buscar, o a mano.
     let userId = flag(rest, "user") ?? datos.u;
-    const email = userId ? undefined : (flag(rest, "email") ?? emailDeGit());
-    if (!userId && email) {
+    const email = userId || !datos.b ? undefined : (flag(rest, "email") ?? emailDeGit());
+    if (!userId && email && datos.b) {
       const r = await fetch(`https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
         { headers: { authorization: `Bearer ${datos.b}` } });
       const j = await r.json();
@@ -320,19 +336,30 @@ async function main() {
         process.exit(1);
       }
     }
-    if (!userId) { console.error("dime quien eres:  --email <tu-email>  o  --user <U0123>"); process.exit(2); }
+    if (!userId && datos.b) { console.error("dime quien eres:  --email <tu-email>  o  --user <U0123>"); process.exit(2); }
 
     const c = Cfg.load();
-    c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
+    if (datos.b && userId) c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
     // El nombre: el que diga --nombre, el que puso quien invita, y si no el usuario del
     // sistema (que en la primera prueba real salio como el usuario de la maquina en todo el hilo).
     if (!c.human || c.human === userInfo().username) c.human = flag(rest, "nombre") ?? datos.n ?? c.human ?? userInfo().username;
-    if (datos.i) Cfg.addContact(c, datos.i);
+    if (datos.i) Cfg.addContact(c, { id: datos.i.id, name: datos.i.name, pk: datos.i.pk, npub: datos.i.np, relays: datos.i.r });
     const { misClaves } = await import("./firma.ts");
     misClaves(c);
+    const N = await import("./nostr.ts");
+    const nk = N.misClaves(c);
     Cfg.save(c);
     if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.claveContacto(datos.i.name)}.`);
-    console.log(`Listo. Estas dentro de ${bot!.team} como ${userId}${email ? ` (${email})` : ""}, y el bot es ${bot!.user}.`);
+    if (bot) console.log(`Listo. Estas dentro de ${bot.team} como ${userId}${email ? ` (${email})` : ""}, y el bot es ${bot.user}.`);
+    console.log(`Tu clave Nostr: ${N.npub(nk.pk)} (reles: ${N.misReles(c).join(", ")}).`);
+    // El saludo: quien invito recibe mi clave por Nostr y ya puede abrirme spoochies cifrados.
+    if (datos.i?.np) {
+      const b = new N.NostrBridge(nk.sk, nk.pk, N.misReles(c), { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} },
+        process.env.SPOOCHIE_NOSTR_DIR ? N.poolDeFichero(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
+      const ok = await b.hola(datos.i.np, datos.i.r ?? [], c.human ?? userInfo().username, userId);
+      b.cerrar();
+      console.log(ok ? `Le he mandado tu clave a ${datos.i.name} por Nostr.` : `No he podido mandar tu clave por Nostr (sin red a los reles); ${datos.i.name} tendra que anadirte con --npub.`);
+    }
     try { const { instalarLaunchd } = await import("./arranque.ts"); instalarLaunchd(); } catch {}
     await ensureDaemon();
     await rpc({ op: "slack-reload" }).catch(() => {});
@@ -348,6 +375,17 @@ async function main() {
     }
     console.log(malos ? `\n${malos} fallos: spoochie no esta listo.` : "\nTodo bien. spoochie entrega en esta maquina.");
     process.exit(malos ? 1 : 0);
+  }
+
+  if (cmd === "nostr") {
+    const N = await import("./nostr.ts");
+    const c = Cfg.load();
+    const k = N.misClaves(c);
+    const reles = flag(rest, "relays");
+    if (reles) { c.nostr = { ...c.nostr, relays: reles.split(",").map(s => s.trim()).filter(s => /^wss?:\/\//.test(s)) }; }
+    Cfg.save(c);
+    console.log(JSON.stringify({ npub: N.npub(k.pk), pk: k.pk, relays: N.misReles(c), transporte: c.transporte ?? "nostr (si el otro tiene clave)" }, null, 2));
+    return;
   }
 
   if (cmd === "slack") {

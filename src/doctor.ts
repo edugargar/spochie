@@ -111,6 +111,17 @@ export async function revisar(): Promise<Chequeo[]> {
     detalle: c.transcript ? "encendido: se pide republicar en cada turno a quien abrio" : "apagado",
   });
 
+  {
+    const N = await import("./nostr.ts");
+    out.push({
+      ok: c.nostr?.pk ? true : "aviso",
+      que: "Nostr",
+      detalle: c.nostr?.pk ? `${N.npub(c.nostr.pk).slice(0, 16)}..., reles: ${N.misReles(c).join(", ")}${c.transporte === "slack" ? " (los hilos van por Slack)" : ""}` : "sin clave todavia: nace con `spoochie nostr`, `invite` o `join`",
+    });
+    const sinClave = Object.values(c.contacts ?? {}).filter(k => !k.npub).map(k => k.name);
+    if (sinClave.length) out.push({ ok: "aviso", que: "contactos sin clave Nostr", detalle: `${sinClave.join(", ")}: con ellos va por Slack hasta que su spoochie (>= 0.9) mande su clave` });
+  }
+
   out.push({
     ok: true,
     que: "borrado al cerrar",

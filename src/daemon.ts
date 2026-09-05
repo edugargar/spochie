@@ -25,6 +25,7 @@ import { publishTranscript, rutaTranscript } from "./transcript.ts";
 import { SPOOL } from "./files.ts";
 import { join } from "node:path";
 import { SlackBridge } from "./slack.ts";
+import { NostrBridge, poolDeFichero, pkDe, RELAYS_POR_DEFECTO } from "./nostr.ts";
 import { repoMatches } from "./match.ts";
 
 /** Con un tick fijo de 20s, cada salto del tunel se comia hasta 20s de espera y una
@@ -49,6 +50,10 @@ function alreadyRunning(): boolean {
 type Req = { op: string; [k: string]: any };
 
 let slack: SlackBridge | null = null;
+let nostr: NostrBridge | null = null;
+/** El puente por el que va un hilo con otra maquina. */
+const puente = (t: T.Thread) => (t.transporte === "nostr" ? nostr : slack) as (SlackBridge | NostrBridge | null);
+const tieneHilo = (t: T.Thread) => Boolean(t.transporte === "nostr" ? t.nostr : t.slack);
 
 /** Pega la peticion de republicar el transcript al turno que ya va para esa sesion. */
 function conTranscript(t: T.Thread, sessionId: string, texto: string): string {
@@ -181,11 +186,12 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
 /** Donde se atiende, dicho en el hilo de Slack, que es donde lo ven las dos personas.
  *  A las sesiones interactivas no se les dice nada mas: es lo que pidio Edu. */
 async function avisarDondeSeAtiende(t: T.Thread, sess: SessionRecord | null, cwd: string) {
-  if (!sess || !slack || !t.slack) return;
+  const p = puente(t);
+  if (!sess || !p || !tieneHilo(t)) return;
   const como = apartes.get(t.id)?.modo === "ventana" ? "en una ventana nueva" : "en segundo plano";
   const copia = (T.load(t.id) ?? t).copiaDe ? ", sobre una copia limpia" : "";
   const nueva = await avisoNueva();
-  await slack.aviso(t, `:desktop_computer: ${Cfg.load().human ?? "aqui"} lo atiende un Claude aparte ${como}, en \`${basename(cwd)}\`${copia}.${nueva ? ` (${nueva})` : ""}`);
+  await p.aviso(t, `:desktop_computer: ${Cfg.load().human ?? "aqui"} lo atiende un Claude aparte ${como}, en \`${basename(cwd)}\`${copia}.${nueva ? ` (${nueva})` : ""}`);
 }
 
 const sessById = (id: string) => liveSessions().find(s => s.sessionId === id);
@@ -194,7 +200,8 @@ const sessById = (id: string) => liveSessions().find(s => s.sessionId === id);
 async function sendToSide(t: T.Thread, side: T.Side, text: string, m?: T.Msg): Promise<boolean> {
   const local = sessById(side.sessionId);
   if (local) return send(local, conTranscript(t, side.sessionId, text));
-  if (slack && t.slack) return slack.post(t, text, m);
+  const p = puente(t);
+  if (p && tieneHilo(t)) return p.post(t, text, m);
   return false;
 }
 
@@ -209,7 +216,7 @@ async function refreshTranscript(t: T.Thread) {
 async function handle(req: Req): Promise<any> {
   switch (req.op) {
     case "ping":
-      return { ok: true, pid: process.pid, slack: Boolean(slack) };
+      return { ok: true, pid: process.pid, slack: Boolean(slack), nostr: Boolean(nostr) };
 
     case "sessions":
       return { ok: true, sessions: liveSessions().map(s => ({ sessionId: s.sessionId, name: s.name, cwd: s.cwd, aparte: s.aparte })) };
@@ -223,13 +230,23 @@ async function handle(req: Req): Promise<any> {
       // Destino remoto: "@alex" va por Slack. Destino local: por nombre de sesion.
       const remote = typeof req.to === "string" && req.to.startsWith("@");
       let to: T.Side;
+      let porNostr: { pk: string; relays: string[] } | null = null;
       if (remote) {
-        if (!slack) return { ok: false, error: "Slack no esta configurado: corre `spoochie slack setup`" };
+        if (!slack && !nostr) return { ok: false, error: "ni Slack ni Nostr estan configurados: corre `spoochie join <invitacion>` o `spoochie slack setup`" };
         // Primero la agenda local: quien te invito o a quien invitaste. Slack solo
         // si no esta, porque buscar por nombre alli exige un scope que puede faltar.
-        const u = Cfg.contact(cfg, req.to.slice(1)) ?? await slack.lookupUser(req.to.slice(1));
-        if (!u) return { ok: false, error: `no encuentro a ${req.to}: ni en tu agenda de spoochie ni en Slack` };
-        to = { sessionId: `slack:${u.id}`, name: u.name, cwd: "(otra maquina)", human: u.name, slackUser: u.id };
+        const u = Cfg.contact(cfg, req.to.slice(1)) ?? (slack ? await slack.lookupUser(req.to.slice(1)) : null);
+        if (!u) return { ok: false, error: `no encuentro a ${req.to}: ni en tu agenda de spoochie${slack ? " ni en Slack" : ""}` };
+        // Con clave Nostr de los dos lados, va por Nostr (cifrado, sin servidor); Slack
+        // se queda para avisar. Con --transporte slack, o sin clave, va por Slack.
+        const npubOtro = (u as any).npub as string | undefined;
+        if (nostr && npubOtro && cfg.transporte !== "slack") {
+          porNostr = { pk: npubOtro, relays: (u as any).relays ?? RELAYS_POR_DEFECTO };
+          to = { sessionId: `nostr:${npubOtro}`, name: u.name, cwd: "(otra maquina)", human: u.name, slackUser: u.id.startsWith("nostr:") ? undefined : u.id };
+        } else {
+          if (!slack) return { ok: false, error: `${req.to} no tiene clave Nostr en tu agenda y aqui no hay Slack: pidele que se de de alta con tu invitacion` };
+          to = { sessionId: `slack:${u.id}`, name: u.name, cwd: "(otra maquina)", human: u.name, slackUser: u.id };
+        }
       } else {
         const matches = findSession(req.to).filter(s => s.sessionId !== req.sessionId);
         if (matches.length === 0) return { ok: false, error: `no encuentro ninguna sesion viva que encaje con "${req.to}"` };
@@ -250,10 +267,16 @@ async function handle(req: Req): Promise<any> {
         messages: [{ at: now, from: me.sessionId, author: req.author ?? "claude", kind: req.kind ?? "text", text: req.body, files: req.files }],
       };
 
-      if (remote && slack) {
+      if (remote && porNostr && nostr) {
+        const ok = await nostr.openThread(t, porNostr.pk, porNostr.relays);
+        if (!ok) return { ok: false, error: "no pude publicar la invitacion en ningun rele de Nostr" };
+        // Slack avisa a la persona, si la conocemos por Slack: el hilo no vive ahi.
+        if (slack && to.slackUser) void slack.avisarDm(to.slackUser, `${cfg.human ?? me.name} te ha abierto un spoochie por Nostr: "${t.subject}". Te salta el aviso en tu Mac; la conversacion va cifrada y no pasa por Slack.`);
+      } else if (remote && slack) {
         const th = await slack.openThread(t);
         if (!th) return { ok: false, error: "no pude abrir el hilo en Slack" };
         t.slack = th;
+        t.transporte = "slack";
       }
       T.save(t);
       await refreshTranscript(t);
@@ -342,7 +365,7 @@ async function handle(req: Req): Promise<any> {
           const ok = await sendToSide(tt, otro, T.renderMessage(tt, mm, otro.sessionId), mm);
           log("salida", tt.id, ok ? "publicado en Slack" : "FALLO al publicar");
           avisarSalida(ok);
-          if (ok && slack) await slack.pensandoOn(tt, otro.human ?? otro.name);
+          if (ok) await puente(tt)?.pensandoOn(tt, otro.human ?? otro.name);
           if (!ok) {
             const yo = sessById(T.mySide(tt, req.sessionId).sessionId);
             if (yo) await send(yo, `[spoochie ${tt.id}] tu mensaje NO salio a Slack. No des por hecho que lo ha leido.`);
@@ -429,7 +452,7 @@ async function handle(req: Req): Promise<any> {
       const t = T.load(req.id);
       if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
       if (t.state === "closed") return { ok: false, error: `spoochie ${req.id} esta cerrado` };
-      const actual = t.state === "open" && !t.to.sessionId.startsWith("slack:") ? sessById(t.to.sessionId) : undefined;
+      const actual = t.state === "open" && !T.esRemoto(t.to.sessionId) ? sessById(t.to.sessionId) : undefined;
       // Un aparte si se puede mover de repo con take; otra sesion interactiva viva, no.
       if (actual && !actual.aparte) return { ok: false, error: `spoochie ${req.id} ya lo atiende ${t.to.name}` };
       // Tomarlo desde una sesion fija el directorio. Si ya esta aceptado y toca Claude
@@ -472,13 +495,14 @@ async function handle(req: Req): Promise<any> {
       t.transcriptOwner = req.sessionId ?? t.transcriptOwner;
       t.transcriptStale = 0;
       T.save(t);
-      if (t.slack && slack) await slack.post(t, `Transcript en vivo: ${req.url}`);
+      if (tieneHilo(t)) await puente(t)?.post(t, `Transcript en vivo: ${req.url}`);
       return { ok: true, id: t.id, url: req.url };
     }
 
     case "slack-reload": {
       slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
-      return { ok: true, slack: Boolean(slack) };
+      arrancarNostr();
+      return { ok: true, slack: Boolean(slack), nostr: Boolean(nostr) };
     }
 
     default:
@@ -517,7 +541,7 @@ const dialogos = new Map<string, import("node:child_process").ChildProcess>();
  *  es un dialogo del sistema y la sesion no ve nada: solo presta su directorio para el
  *  Claude aparte. Sin escritorio, la invitacion entra en esa sesion como antes. */
 async function assign(t: T.Thread): Promise<string | null> {
-  if (t.state !== "pending" || !t.to.sessionId.startsWith("slack:")) return null;
+  if (t.state !== "pending" || !T.esRemoto(t.to.sessionId)) return null;
   // Quien abrio el tunel no es el destinatario: si se lo repartiera a si mismo,
   // se pisaria el nombre del otro lado y el transcript diria "Alex y Alex".
   const yo = Cfg.load().slack?.userId;
@@ -563,7 +587,7 @@ async function onSlackAccept(t: T.Thread, quien: string) {
   // tick publicaban dos veces "ha aceptado". Se mira el estado fresco.
   if ((T.load(t.id) ?? t).state !== "pending") return;
   // Puede que el spoochie todavia no tenga sesion local: primero se le busca una.
-  if (t.to.sessionId.startsWith("slack:")) await assign(t);
+  if (T.esRemoto(t.to.sessionId)) await assign(t);
   const fresco = T.load(t.id) ?? t;
   fresco.state = "open";
   fresco.acceptedAt = Date.now();
@@ -585,7 +609,7 @@ async function onSlackAccept(t: T.Thread, quien: string) {
     }
   } else if (!local) {
     // Ninguna sesion de Claude Code abierta en esta maquina: no hay repo donde nacer.
-    if (slack && fresco.slack) await slack.aviso(fresco, `:warning: ${Cfg.load().human ?? "el otro lado"} no tiene ninguna sesion de Claude Code abierta. El spoochie espera: al abrir una en el repo, \`spoochie take ${fresco.id}\`.`);
+    if (puente(fresco) && tieneHilo(fresco)) await puente(fresco)!.aviso(fresco, `:warning: ${Cfg.load().human ?? "el otro lado"} no tiene ninguna sesion de Claude Code abierta. El spoochie espera: al abrir una en el repo, \`spoochie take ${fresco.id}\`.`);
   }
   await refreshTranscript(fresco);
   log("accept", fresco.id, quien, local ? `-> ${local.name}` : "sin sesion local");
@@ -613,7 +637,7 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   if (t.state === "pending" && m.author === "human") { t.state = "open"; t.acceptedAt = m.at; t.acceptedBy = "humano en Slack"; }
   T.save(t);
   // Un spoochie recien descubierto todavia no tiene lado local: se le busca uno.
-  if (t.state === "pending" && t.to.sessionId.startsWith("slack:")) {
+  if (t.state === "pending" && T.esRemoto(t.to.sessionId)) {
     const asignada = await assign(t);
     log("slack-in", t.id, m.author, asignada ? "asignado" : "sin sesion a la que asignar");
     return;
@@ -628,7 +652,7 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   if (local) {
     await send(local, conTranscript(t, mio, T.renderMessage(t, m, mio)));
     // El otro lado ve que aqui se esta trabajando, en vez de 40 segundos en blanco.
-    if (slack) await slack.pensandoOn(t, T.mySide(t, mio).human ?? T.mySide(t, mio).name);
+    await puente(t)?.pensandoOn(t, T.mySide(t, mio).human ?? T.mySide(t, mio).name);
   }
   await refreshTranscript(t);
   log("slack-in", t.id, m.author, local ? "entregado" : "sin sesion local");
@@ -647,14 +671,14 @@ async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
     m.peligro = v.why;
     T.save(t);
     const receptor = T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId);
-    if (slack && t.slack) await slack.aviso(t, `:no_entry: *retenido por el vigilante*: ${v.why}. <@${receptor.slackUser ?? ""}> escribe \`suelta\` en este hilo para entregarlo, o \`descarta\`.`);
+    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:no_entry: *retenido por el vigilante*: ${v.why}. <@${receptor.slackUser ?? ""}> escribe \`suelta\` en este hilo para entregarlo, o \`descarta\`.`);
     const local = sessById(receptor.sessionId);
     if (local) await send(local, `[spoochie ${t.id} | ${t.subject}] un mensaje de ${quien.human ?? quien.name} esta RETENIDO por el vigilante: ${v.why}. No lo has recibido. Tu humano decide: "suelta" o "descarta" en el hilo de Slack, o  spoochie release ${t.id}  /  spoochie discard ${t.id}`);
     return false;
   }
   if (v.verdict !== "dentro") {
     T.save(t);
-    if (slack && t.slack) await slack.aviso(t, v.verdict === "sin vigilar" ? `:grey_question: ${v.why}.` : `:warning: el vigilante lo ve *${v.verdict}* del asunto: ${v.why}`);
+    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, v.verdict === "sin vigilar" ? `:grey_question: ${v.why}.` : `:warning: el vigilante lo ve *${v.verdict}* del asunto: ${v.why}`);
   }
   return true;
 }
@@ -673,11 +697,55 @@ async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): 
   if (n) {
     t.lastActivityAt = Date.now();
     T.save(t);
-    if (slack && t.slack) await slack.aviso(t, orden === "suelta" ? `:unlock: ${n} mensaje(s) retenido(s) entregado(s) ${como}.` : `:wastebasket: ${n} mensaje(s) retenido(s) descartado(s) ${como}.`);
+    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, orden === "suelta" ? `:unlock: ${n} mensaje(s) retenido(s) entregado(s) ${como}.` : `:wastebasket: ${n} mensaje(s) retenido(s) descartado(s) ${como}.`);
     await refreshTranscript(t);
   }
   log("retenidos", t.id, orden, n, como);
   return n;
+}
+
+/** A quien esta en la agenda por Slack pero sin clave Nostr, se le manda la mia por su
+ *  DM. Su demonio la guarda y contesta con la suya; en una vuelta los dos la tienen y
+ *  el siguiente spoochie va cifrado. Una vez por contacto y arranque. */
+const holasMandados = new Set<string>();
+async function repartirClaveNostr() {
+  if (!slack || !nostr) return;
+  const c = Cfg.load();
+  for (const k of Object.values(c.contacts ?? {})) {
+    if (k.npub || !/^[UW][A-Z0-9]{6,}$/.test(k.id) || holasMandados.has(k.id)) continue;
+    holasMandados.add(k.id);
+    const ok = await slack.hola(k.id, nostr.pk, nostr.relays, c.human ?? "alguien");
+    log("nostr", "clave mandada por Slack a", k.name, ok ? "ok" : "FALLO");
+  }
+}
+
+function arrancarNostr() {
+  nostr?.cerrar();
+  nostr = NostrBridge.fromConfig({
+    onMessage: onSlackMessage, onRemoteAccept, onCierre: onRemoteClose, log,
+    onHola: async (de, sobre, nombre) => {
+      // Alguien a quien invite ya esta dentro: su clave entra en la agenda, pegada a su
+      // id de Slack si lo dijo (asi el aviso por DM sigue funcionando).
+      const c = Cfg.load();
+      const previo = (sobre.slack && Cfg.contactById(c, sobre.slack)) || Cfg.contactoPorNpub(c, de);
+      Cfg.addContact(c, { id: previo?.id ?? sobre.slack ?? `nostr:${de}`, name: previo?.name ?? nombre, npub: de, relays: sobre.relays });
+      Cfg.save(c);
+      log("nostr", "hola de", nombre, de.slice(0, 12));
+    },
+  }, process.env.SPOOCHIE_NOSTR_DIR ? poolDeFichero(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
+  nostr?.escuchar();
+  if (slack) {
+    slack.onHola = async (de, nombre, np, r) => {
+      const c = Cfg.load();
+      const previo = Cfg.contactById(c, de);
+      Cfg.addContact(c, { id: de, name: previo?.name ?? nombre, npub: np, relays: r });
+      Cfg.save(c);
+      log("nostr", "clave recibida por Slack de", previo?.name ?? nombre);
+      // Si el no tiene la mia, se la mando (una vez): asi converge en una vuelta.
+      if (nostr && !holasMandados.has(de)) { holasMandados.add(de); await slack!.hola(de, nostr.pk, nostr.relays, c.human ?? "alguien"); }
+    };
+  }
+  setTimeout(() => { void repartirClaveNostr(); }, 3000).unref();
 }
 
 /** El otro lado cerro: se cierra aqui sin volver a avisarle, y se borra igual. */
@@ -711,9 +779,9 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
     // En local, ya: la conversacion vive en el Claude que la tuvo, no aqui.
     T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
     log("borrado", t.id, "local");
-    if (slack && t.slack) {
-      const s = slack;
-      setTimeout(async () => { const n = await s.borrarHilo(t); log("borrado", t.id, "slack", n, "mensajes del bot"); }, BORRAR_SLACK_TRAS_MS).unref();
+    const p = puente(t);
+    if (p && tieneHilo(t)) {
+      setTimeout(async () => { const n = await p.borrarHilo(t); log("borrado", t.id, t.transporte ?? "slack", n, "envios"); }, BORRAR_SLACK_TRAS_MS).unref();
     }
   }
   const ap = apartes.get(t.id);
@@ -756,6 +824,7 @@ function main() {
   latir();
   setInterval(latir, LATIDO_MS).unref();
   slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
+  arrancarNostr();
   // Lo que un demonio anterior dejo sin sacar, y las ventanas de aparte que siguen vivas.
   const reanudados = reanudar(async (tt, mm) => {
     const yo = sessById(tt.from.sessionId) ? tt.from : tt.to;
@@ -792,7 +861,7 @@ function main() {
   server.listen(DAEMON_SOCK, () => log("spoochied", VERSION, "escuchando", DAEMON_SOCK, "pid", process.pid, "slack", Boolean(slack)));
 
   const late = () => {
-    const vivo = T.all().some(t => t.state !== "closed" && t.slack);
+    const vivo = T.all().some(t => t.state !== "closed" && tieneHilo(t));
     tick()
       .catch(e => log("tick-error", String(e)))
       .finally(() => setTimeout(late, vivo ? TICK_VIVO_MS : TICK_IDLE_MS));

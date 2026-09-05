@@ -285,3 +285,23 @@ test("borrarHilo borra lo del bot (mensajes, ficheros, raiz y aviso) y deja lo q
   expect(borrados).toEqual(["files.delete:F1", "chat.delete:0.2", "chat.delete:0.4", "chat.delete:0.1", "chat.delete:9.9"]);
   expect(n).toBe(4);
 });
+
+test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; el mio lleva la mia", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+  const posts: any[] = [];
+  b.call = async (method: string, body: any) => { if (method === "conversations.open") return { channel: { id: "D_X" } }; if (method === "chat.postMessage") posts.push(body); return {}; };
+  await b.hola("U_ALEX", "a".repeat(64), ["wss://x"], "Edu");
+  expect(posts[0].channel).toBe("D_X");
+  expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
+
+  const recibidos: any[] = [];
+  b.onHola = async (de: string, nombre: string, np: string, r: string[]) => { recibidos.push({ de, nombre, np, r }); };
+  b.inbox = async () => "D_ME";
+  b.get = async () => ({ messages: [
+    { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_ALEX", fromName: "Alex", np: "b".repeat(64), r: ["wss://alex"] } } },
+    { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_ALEX", fromName: "Alex", np: "b".repeat(64), r: ["wss://alex"] } } },
+  ] });
+  b.inboxCursor = "0";
+  await b.discover();
+  expect(recibidos).toEqual([{ de: "U_ALEX", nombre: "Alex", np: "b".repeat(64), r: ["wss://alex"] }]);
+});
